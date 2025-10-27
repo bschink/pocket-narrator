@@ -1,0 +1,28 @@
+seed: 1337
+device: "auto"   # "cpu", "cuda" or "auto"
+
+data:
+  dataset_name: "skeskinen/TinyStories-hf"   #  TinyStories
+  cache_dir: "data/hf_cache"
+  text_column: "text"
+  train_split: "train"
+  val_split: "validation"
+  context_length: 128
+  max_train_samples: 4096       #  for high speed
+  max_val_samples: 512
+
+model:
+  vocab_size: 8192
+  d_model: 256
+  n_heads: 4
+  n_layers: 4
+  dropout: 0.1
+
+train:
+  batch_size: 32
+  lr: 3e-4
+  weight_decay: 0.01
+  max_steps: 1000
+  eval_every: 200
+  save_every: 500
+  ckpt_dir: "models"
