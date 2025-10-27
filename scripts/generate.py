@@ -24,6 +24,7 @@ sys.path.insert(0, str(project_root))
 import argparse
 from pocket_narrator.model import load_model
 from pocket_narrator.tokenizer import get_tokenizer
+from pocket_narrator.data_loader import load_text_dataset
 
 def main():
     # --- set up argument parser ---
