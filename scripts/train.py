@@ -105,7 +105,7 @@ def main():
     # 5) Acceptance: prompt → generate a sample
     try:
         # Build a toy input from the prompt using a trivial whitespace mapping coming from data_loader
-        # (Your build_dataloaders returns a decode_fn; for encode, use the data_loader's helper if available.
+        # (the build_dataloaders returns a decode_fn; for encode, use the data_loader's helper if available.
         # If not, a minimal fallback is to split and map unknown to 0.)
         from pocket_narrator.data_loader import encode_prompt  # optional helper if Yumna implements it
         if 'encode_prompt' in globals():
@@ -122,3 +122,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
