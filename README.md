@@ -73,11 +73,11 @@ cd pocket-narrator
 ### 2. Set Up Environment
 
 ```bash
-# Create virtual environment
-python3 -m venv venv
+# Create conda environment
+conda create -n pocket-narrator
 
-# Activate the virtual environment
-source .venv/bin/activate
+# Activate the conda environment
+conda activate pocket-narrator
 ```
 
 ### 3. Install Python Dependencies

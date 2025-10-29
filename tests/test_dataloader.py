@@ -1,3 +1,4 @@
+import pytest
 from pocket_narrator.data_loader import load_text_dataset, split_text, batchify_text
 
 def test_load_text_dataset(tmp_path):
