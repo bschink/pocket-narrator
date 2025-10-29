@@ -28,8 +28,8 @@ class AbstractLanguageModel(ABC):
 
     @classmethod
     @abstractmethod
-    def load(cls, model_path: str):
-        """Loads a model artifact from a file."""
+    def load(cls, model_path: str, config: dict):
+        """Loads a model artifact. Takes a pre-parsed config dict."""
         pass
 
 # --- The MVP Model ---
@@ -39,30 +39,26 @@ class PocketNarratorModelMVP(AbstractLanguageModel):
 
     def predict_sequence_batch(self, input_tokens_batch: list[list[int]]) -> list[list[int]]:
         print(f"MVP: Model predicting from batch of size {len(input_tokens_batch)}...")
-        hardcoded_prediction = [22, 19, 23, 4, 17, 5, 23] # "sat on the mat"
+        hardcoded_prediction = [22, 5, 23, 4, 19, 18, 4, 23, 12, 9, 4, 17, 5, 23] # "sat on the mat"
         return [hardcoded_prediction] * len(input_tokens_batch)
 
     def save(self, model_path: str):
         print(f"MVP: Saving model to {model_path}...")
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        # saving config
         with open(model_path, 'w') as f:
-            f.write(f"model_type=mvp\nvocab_size={self.vocab_size}")
+            f.write(f"model_type=mvp\n")
+            f.write(f"vocab_size={self.vocab_size}\n")
         print("MVP: Model saved successfully.")
-
+    
     @classmethod
-    def load(cls, model_path: str):
-        print(f"MVP: Loading model from {model_path}")
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"No model file found at {model_path}")
-        
-        # only read the vocab_size for the MVP instance
-        with open(model_path, 'r') as f:
-            lines = f.readlines()
-            # A simple parser for our dummy file
-            config = {key: val for key, val in (line.strip().split('=') for line in lines)}
-            vocab_size = int(config['vocab_size'])
-
-        print(f"MVP: Model loaded successfully with vocab_size={vocab_size}.")
+    def load(cls, model_path: str, config: dict):
+        """
+        Loads the MVP model
+        """
+        print("MVP: Instantiating model from config...")
+        vocab_size = int(config['vocab_size'])
+        # The 'model_path' argument is unused for the MVP. later call torch.load(model_path).
         return cls(vocab_size=vocab_size)
 
 # --- The Factory Function ---
@@ -82,8 +78,7 @@ def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageMod
 
 def load_model(model_path: str) -> AbstractLanguageModel:
     """
-    Loads a model artifact from a file, automatically detecting its type.
-    This is the single entry point for loading models in the application.
+    Loads a model artifact from a file, automatically detecting its type
 
     Args:
         model_path (str): The path to the saved model file.
@@ -95,13 +90,15 @@ def load_model(model_path: str) -> AbstractLanguageModel:
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"No model file found at {model_path}")
 
-    # determine model type from the file
+    # read the configuration from the file into a dictionary
     config = {}
     with open(model_path, 'r') as f:
         for line in f:
-            key, val = line.strip().split('=')
-            config[key] = val
+            if '=' in line:
+                key, val = line.strip().split('=', 1)
+                config[key] = val
             
+    # determine model type from the file
     model_type = config.get("model_type")
     if not model_type:
         raise ValueError(f"Model file at {model_path} is missing 'model_type' config.")
@@ -112,6 +109,6 @@ def load_model(model_path: str) -> AbstractLanguageModel:
     else:
         raise ValueError(f"Unknown model type '{model_type}' found in model file.")
 
-    model = ModelClass.load(model_path)
+    model = ModelClass.load(model_path, config)
     
     return model

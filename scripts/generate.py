@@ -24,7 +24,6 @@ sys.path.insert(0, str(project_root))
 import argparse
 from pocket_narrator.model import load_model
 from pocket_narrator.tokenizer import get_tokenizer
-from pocket_narrator.data_loader import load_text_dataset
 
 def main():
     # --- set up argument parser ---
@@ -68,7 +67,7 @@ def main():
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     
     generated_text = predicted_text_batch[0]
-    print(f"Generated text: '{generated_text}'")
+    print(f"Generated text: '{prompt_text}{generated_text}'")
     
     print("--- Generation finished ---")
 

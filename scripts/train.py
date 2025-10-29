@@ -1,125 +1,104 @@
-import os, math, time, argparse, json, random
-import torch
-import torch.nn as nn
-from torch.optim import AdamW
+"""
+The main training script for the PocketNarrator project.
 
-from pocket_narrator.model import PocketNarratorModel, ModelConfig
-from pocket_narrator.data_loader import build_dataloaders
-from pocket_narrator.evaluate import perplexity
+This script connects all modular components (data loader, tokenizer, model, evaluator)
+into a functional end-to-end pipeline.
+"""
+import sys
+from pathlib import Path
 
-def set_seed(s):
-    random.seed(s); torch.manual_seed(s); torch.cuda.manual_seed_all(s)
+# Add the project root to Python path for robust imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-def cosine_with_warmup(step, max_steps, base_lr, warmup_steps):
-    if step < warmup_steps:
-        return base_lr * step / max(1, warmup_steps)
-    progress = (step - warmup_steps) / max(1, max_steps - warmup_steps)
-    return base_lr * 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+from pocket_narrator.model import get_model
+from pocket_narrator.tokenizer import get_tokenizer
+from pocket_narrator.evaluate import run_evaluation
+from pocket_narrator.data_loader import load_text_dataset, split_text, batchify_text
+
+# --- Constants and Configuration ---
+DATA_PATH = "data/mvp_dataset.txt"
+MODEL_SAVE_PATH = "models/mvp_model.pth"
+BATCH_SIZE = 2
+VAL_RATIO = 0.2
+RANDOM_SEED = 42
+
+def prepare_batch(batch_text: list[str], tokenizer) -> tuple[list[list[int]], list[list[int]]]:
+    """
+    Helper function to prepare a batch of text for the model.
+    Task: Given the first half of a sentence, predict the second half.
+    """
+    input_tokens_batch = []
+    target_tokens_batch = []
+
+    for text in batch_text:
+        tokens = tokenizer.encode(text)
+        # split the token sequence in the middle
+        split_point = len(tokens) // 2
+        input_tokens_batch.append(tokens[:split_point])
+        target_tokens_batch.append(tokens[split_point:])
+    
+    return input_tokens_batch, target_tokens_batch
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--data_dir", type=str, default="data")
-    p.add_argument("--out_dir", type=str, default="models/ts_run1")
-    p.add_argument("--block_size", type=int, default=256)
-    p.add_argument("--n_layer", type=int, default=6)
-    p.add_argument("--n_head", type=int, default=6)
-    p.add_argument("--n_embd", type=int, default=192)
-    p.add_argument("--batch_size", type=int, default=32)
-    p.add_argument("--lr", type=float, default=3e-4)
-    p.add_argument("--weight_decay", type=float, default=0.1)
-    p.add_argument("--max_steps", type=int, default=5000)
-    p.add_argument("--warmup_steps", type=int, default=100)
-    p.add_argument("--eval_every", type=int, default=200)
-    p.add_argument("--seed", type=int, default=1337)
-    p.add_argument("--compile", action="store_true")
-    p.add_argument("--sample_prompt", type=str, default="Tom and Jane are friends.")
-    args = p.parse_args()
+    print("--- Starting MVP for PocketNarrator ---")
 
-    os.makedirs(args.out_dir, exist_ok=True)
-    set_seed(args.seed)
+    # --- Initialization ---
+    print("Initializing tokenizer and model...")
+    tokenizer = get_tokenizer(tokenizer_type="simple")
+    model = get_model(model_type="mvp", vocab_size=tokenizer.get_vocab_size())
 
-    # 1) Data
-    train_loader, val_loader, vocab_size, eos_id, decode_fn = build_dataloaders(
-        data_dir=args.data_dir,
-        split_ratio=0.98,
-        block_size=args.block_size,
-        batch_size=args.batch_size,
-        seed=args.seed
+    # --- Data Loading and Preparation ---
+    print(f"Loading and splitting dataset from {DATA_PATH}...")
+    all_lines = load_text_dataset(DATA_PATH)
+    train_lines, val_lines = split_text(all_lines, val_ratio=VAL_RATIO, seed=RANDOM_SEED)
+    print(f"Dataset loaded: {len(train_lines)} training samples, {len(val_lines)} validation samples.")
+
+    # --- MVP Training Loop (Simulated) ---
+    print("\n--- Starting MVP Training Loop (simulating one step) ---")
+    train_batch_iterator = batchify_text(train_lines, batch_size=BATCH_SIZE, shuffle=True, seed=RANDOM_SEED)
+    train_batch_text = next(train_batch_iterator)
+    train_inputs, train_targets = prepare_batch(train_batch_text, tokenizer)
+    
+    # use the model to get a prediction. later we would compute loss and backpropagate
+    _ = model.predict_sequence_batch(train_inputs)
+    print(f"Processed one training batch of size {len(train_batch_text)}.")
+    print(f"  - Example Input (tokens): {train_inputs[0]}")
+    print(f"  - Example Target (tokens): {train_targets[0]}")
+
+    # --- MVP Validation Loop (Simulated) ---
+    print("\n--- Starting MVP Validation ---")
+    val_batch_iterator = batchify_text(val_lines, batch_size=BATCH_SIZE, shuffle=False)
+    val_batch_text = next(val_batch_iterator)
+    val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
+
+    # use the model to get a prediction
+    predicted_tokens_batch = model.predict_sequence_batch(val_inputs)
+    
+    # decode text representations for evaluation
+    predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
+    target_text_batch = tokenizer.decode_batch(target_tokens_batch)
+
+    print(f"Validation Input: '{tokenizer.decode(val_inputs[0])}'")
+    print(f"Model Prediction: '{predicted_text_batch[0]}'")
+    print(f"Ground Truth: '{target_text_batch[0]}'")
+
+    evaluation_summary = run_evaluation(
+        predicted_tokens=predicted_tokens_batch,
+        target_tokens=target_tokens_batch,
+        predicted_text=predicted_text_batch,
+        target_text=target_text_batch
     )
+    
+    print("\n--- Evaluation Summary ---")
+    for metric, value in evaluation_summary.items():
+        print(f"{metric}: {value:.4f}")
 
-    # 2) Model
-    cfg = ModelConfig(
-        vocab_size=vocab_size,
-        block_size=args.block_size,
-        n_layer=args.n_layer,
-        n_head=args.n_head,
-        n_embd=args.n_embd,
-        pdrop=0.0,
-        tie_weights=True,
-    )
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = PocketNarratorModel(cfg).to(device)
-    if args.compile and hasattr(torch, "compile"):
-        model = torch.compile(model)
+    # --- Save the Trained Model ---
+    model.save(MODEL_SAVE_PATH)
+    
+    print("\n--- MVP run finished successfully! ---")
 
-    # 3) Optim
-    optim = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.95))
-    scaler = torch.cuda.amp.GradScaler(enabled=(device=="cuda"))
-
-    # 4) Train
-    step, best_ppl = 0, float("inf")
-    t0 = time.time()
-    model.train()
-    while step < args.max_steps:
-        for xb, yb in train_loader:
-            if step >= args.max_steps: break
-            lr_now = cosine_with_warmup(step, args.max_steps, args.lr, args.warmup_steps)
-            for g in optim.param_groups: g['lr'] = lr_now
-            xb, yb = xb.to(device), yb.to(device)
-
-            with torch.cuda.amp.autocast(enabled=(device=="cuda")):
-                _, loss = model(xb, yb)
-            scaler.scale(loss).backward()
-            scaler.step(optim); scaler.update()
-            optim.zero_grad(set_to_none=True)
-
-            if (step+1) % 50 == 0:
-                dt = time.time() - t0
-                print(f"[step {step+1}] loss={loss.item():.3f} lr={lr_now:.2e} dt={dt:.1f}s")
-                t0 = time.time()
-
-            if (step+1) % args.eval_every == 0:
-                val_ppl = perplexity(model, val_loader, device=device)
-                print(f"[eval] val perplexity={val_ppl:.2f}")
-                if val_ppl < best_ppl:
-                    best_ppl = val_ppl
-                    torch.save({"model": model.state_dict(), "config": cfg.__dict__},
-                               os.path.join(args.out_dir, "model_best.pt"))
-                    print(f"[ckpt] best improved → saved model_best.pt (ppl={best_ppl:.2f})")
-            step += 1
-
-    torch.save({"model": model.state_dict(), "config": cfg.__dict__},
-               os.path.join(args.out_dir, "model_last.pt"))
-    print("[done] saved model_last.pt")
-
-    # 5) Acceptance: prompt → generate a sample
-    try:
-        # Build a toy input from the prompt using a trivial whitespace mapping coming from data_loader
-        # (the build_dataloaders returns a decode_fn; for encode, use the data_loader's helper if available.
-        # If not, a minimal fallback is to split and map unknown to 0.)
-        from pocket_narrator.data_loader import encode_prompt  # optional helper if Yumna implements it
-        if 'encode_prompt' in globals():
-            ids = encode_prompt(args.sample_prompt)
-        else:
-            ids = [1]  # start with something valid; data_loader should provide a real encoder soon
-        x = torch.tensor([ids], dtype=torch.long, device=device)
-        y = model.generate(x, max_new_tokens=60, temperature=0.9, top_k=40, eos_token_id=eos_id)
-        print("\n=== SAMPLE ===")
-        print(decode_fn(y[0].tolist()))
-        print("==============\n")
-    except Exception as e:
-        print(f"[warn] sample generation skipped: {e}")
 
 if __name__ == "__main__":
     main()
-
