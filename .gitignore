@@ -211,6 +211,7 @@ __marimo__/
 # data files
 data/*
 !data/.gitkeep
+!data/mvp_dataset.txt
 
 # model artifacts
 models/*
