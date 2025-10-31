@@ -31,7 +31,7 @@ To achieve this, we will implement language models from scratch using PyTorch. T
 
 ## Directory Structure
 
-```
+```bash
 pocket-narrator/
 ├── README.md
 ├── requirements.txt
@@ -91,15 +91,17 @@ pip install -r requirements.txt
 ### Training
 
 ```bash
-# not yet functional
 python scripts/train.py
 ```
 
 ### Generation
 
 ```bash
-# not yet functional
+# to run with the default prompt
 python scripts/generate.py
+
+# to provide your own prompt
+python scripts/generate.py --prompt "A girl went to the"
 ```
 
 ## Team
