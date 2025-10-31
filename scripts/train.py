@@ -18,6 +18,8 @@ from pocket_narrator.data_loader import load_text_dataset, split_text, batchify_
 
 # --- Constants and Configuration ---
 DATA_PATH = "data/mvp_dataset.txt"
+TOKENIZER_PATH = "models/character_tokenizer_vocab.json"
+TOKENIZER_TYPE = "character"
 MODEL_SAVE_PATH = "models/mvp_model.pth"
 BATCH_SIZE = 2
 VAL_RATIO = 0.2
@@ -43,16 +45,16 @@ def prepare_batch(batch_text: list[str], tokenizer) -> tuple[list[list[int]], li
 def main():
     print("--- Starting MVP for PocketNarrator ---")
 
-    # --- Initialization ---
-    print("Initializing tokenizer and model...")
-    tokenizer = get_tokenizer(tokenizer_type="simple")
-    model = get_model(model_type="mvp", vocab_size=tokenizer.get_vocab_size())
-
     # --- Data Loading and Preparation ---
     print(f"Loading and splitting dataset from {DATA_PATH}...")
     all_lines = load_text_dataset(DATA_PATH)
     train_lines, val_lines = split_text(all_lines, val_ratio=VAL_RATIO, seed=RANDOM_SEED)
     print(f"Dataset loaded: {len(train_lines)} training samples, {len(val_lines)} validation samples.")
+
+    # --- Initialization ---
+    print("Initializing tokenizer and model...")
+    tokenizer = get_tokenizer(tokenizer_type=TOKENIZER_TYPE, tokenizer_path=TOKENIZER_PATH, train_corpus=train_lines)
+    model = get_model(model_type="mvp", vocab_size=tokenizer.get_vocab_size())
 
     # --- MVP Training Loop (Simulated) ---
     print("\n--- Starting MVP Training Loop (simulating one step) ---")

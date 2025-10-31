@@ -1,131 +1,123 @@
 """
-Unit tests for the tokenizer module, including the SimpleTokenizer class
+Unit tests for the tokenizer module, including the CharacterTokenizer class
 and the get_tokenizer factory function.
 """
+import os
 import pytest
-from pocket_narrator.tokenizer import SimpleTokenizer, get_tokenizer
+from pocket_narrator.tokenizer import CharacterTokenizer, get_tokenizer
 
-# --- Tests for the SimpleTokenizer Class ---
+# --- Tests for the CharacterTokenizer Class ---
 
-def test_simple_tokenizer_initialization():
-    """
-    Tests that the tokenizer initializes correctly, creating the necessary mappings
-    and identifying the special token IDs.
-    """
-    # Arrange & Act
-    tokenizer = SimpleTokenizer()
-    
-    # Assert
-    assert tokenizer.get_vocab_size() == 27 # Based on the hardcoded vocabulary
-    assert tokenizer.unk_token_id == 1      # <unk> is the second item in the list (index 1)
-    assert tokenizer.char_to_idx['a'] == 5
-    assert tokenizer.idx_to_char[5] == 'a'
+def test_character_tokenizer_initialization():
+    tokenizer = CharacterTokenizer()
+    assert tokenizer.get_vocab_size() == 0
+    assert tokenizer.vocabulary == []
+    assert not tokenizer.char_to_idx
+    assert tokenizer.unk_token_id is None
 
-def test_encode_simple_string():
-    """Tests encoding a simple string containing only known characters."""
+def test_train_method_builds_vocab_correctly():
     # Arrange
-    tokenizer = SimpleTokenizer()
-    text = "a bad cat"
+    corpus = ["hello", "world"]
+    tokenizer = CharacterTokenizer()
     
     # Act
-    token_ids = tokenizer.encode(text)
+    tokenizer.train(corpus)
     
     # Assert
-    # Manually calculated from the vocabulary: 'a' 5, ' ' 4, 'b' 6, 'd' 8, 'c' 7, 't' 23
-    expected_ids = [5, 4, 6, 5, 8, 4, 7, 5, 23]
-    assert token_ids == expected_ids
+    # Vocab = 4 special tokens + sorted unique chars from "helloworld" ('d', 'e', 'h', 'l', 'o', 'r', 'w')
+    unique_chars = sorted(list(set("".join(corpus))))
+    expected_vocab = tokenizer.special_tokens + unique_chars
+    
+    assert tokenizer.vocabulary == expected_vocab
+    assert tokenizer.get_vocab_size() == 4 + 7
+    assert tokenizer.char_to_idx['h'] == 6
+    assert tokenizer.unk_token_id == 1
 
-def test_decode_simple_ids():
-    """Tests decoding a simple list of token IDs."""
+def test_untrained_tokenizer_raises_runtime_error():
+    tokenizer = CharacterTokenizer()
+    with pytest.raises(RuntimeError, match="Tokenizer has not been trained"):
+        tokenizer.encode("hello")
+    with pytest.raises(RuntimeError, match="Tokenizer has not been trained"):
+        tokenizer.decode([1, 2, 3])
+
+def test_save_and_load_roundtrip(tmp_path):
     # Arrange
-    tokenizer = SimpleTokenizer()
-    token_ids = [5, 4, 6, 5, 8, 4, 7, 5, 23]
+    corpus = ["a simple test!"]
+    original_tokenizer = CharacterTokenizer()
+    original_tokenizer.train(corpus)
+    save_path = tmp_path / "vocab.json"
+
+    # Act
+    original_tokenizer.save(save_path)
+    loaded_tokenizer = CharacterTokenizer.load(save_path)
+    
+    # Assert
+    assert loaded_tokenizer.vocabulary == original_tokenizer.vocabulary
+    assert loaded_tokenizer.char_to_idx == original_tokenizer.char_to_idx
+    assert loaded_tokenizer.unk_token_id == original_tokenizer.unk_token_id
+    
+    text = "a test"
+    assert loaded_tokenizer.decode(loaded_tokenizer.encode(text)) == text
+
+def test_encode_decode_after_training_with_unknowns():
+    # Arrange
+    tokenizer = CharacterTokenizer()
+    tokenizer.train(["abc"])
     
     # Act
-    text = tokenizer.decode(token_ids)
+    text_with_unknowns = "ad"  # 'a' is known, 'd' is unknown
+    encoded = tokenizer.encode(text_with_unknowns)
+    decoded = tokenizer.decode(encoded)
     
     # Assert
-    expected_text = "a bad cat"
-    assert text == expected_text
-
-def test_encode_with_unknown_characters():
-    """
-    Tests that any character not in the hardcoded vocabulary is correctly
-    mapped to the <unk> token ID.
-    """
-    # Arrange
-    tokenizer = SimpleTokenizer()
-    text = "a catz!" # 'z' and '!' are not in the vocabulary
     unk_id = tokenizer.unk_token_id
-    
-    # Act
-    token_ids = tokenizer.encode(text)
-    
-    # Assert
-    # Expected: 'a' 5, ' ' 4, 'c' 7, 'a' 5, 't' 23, 'z' <unk>, '!' <unk>
-    expected_ids = [5, 4, 7, 5, 23, unk_id, unk_id]
-    assert token_ids == expected_ids
+    assert encoded == [tokenizer.char_to_idx['a'], unk_id]
+    assert decoded == "a<unk>"
 
-def test_roundtrip_with_unknowns():
-    """
-    Tests that encoding and then decoding a string with unknown characters
-    produces a predictable (though not identical) result.
-    """
-    # Arrange
-    tokenizer = SimpleTokenizer()
-    original_text = "a catz!"
-    
-    # Act
-    token_ids = tokenizer.encode(original_text)
-    reconstructed_text = tokenizer.decode(token_ids)
-    
-    # Assert
-    # The unknown characters 'z' and '!' should be decoded back to the <unk> string.
-    expected_text = "a cat<unk><unk>"
-    assert reconstructed_text == expected_text
-
-def test_batch_methods_are_symmetrical():
-    """
-    Tests that the batch encoding and decoding methods work correctly and
-    are symmetrical for known characters.
-    """
-    # Arrange
-    tokenizer = SimpleTokenizer()
-    texts = ["a bad cat", "a sad dad"]
-    
-    # Act
-    encoded_batch = tokenizer.encode_batch(texts)
-    decoded_batch = tokenizer.decode_batch(encoded_batch)
-    
-    # Assert
-    # Check that the batch encoding produced the correct list of lists
-    expected_encoded = [
-        [5, 4, 6, 5, 8, 4, 7, 5, 23], # "a bad cat"
-        [5, 4, 22, 5, 8, 4, 8, 5, 8]  # "a sad dad"
-    ]
-    assert encoded_batch == expected_encoded
-    
-    # Check that the decoded batch matches the original input
-    assert decoded_batch == texts
 
 # --- Tests for the get_tokenizer Factory Function ---
 
-def test_get_tokenizer_success():
-    """
-    Tests that the factory function returns an instance of the correct class
-    when a valid tokenizer type is requested.
-    """
+def test_get_tokenizer_loads_existing_file(tmp_path):
+    # Arrange
+    corpus1 = ["hello"]
+    corpus2 = ["world"]
+    tokenizer_path = tmp_path / "vocab.json"
+    
+    initial_tokenizer = CharacterTokenizer()
+    initial_tokenizer.train(corpus1)
+    initial_tokenizer.save(tokenizer_path)
+
     # Act
-    tokenizer = get_tokenizer(tokenizer_type="simple")
+    loaded_tokenizer = get_tokenizer(
+        tokenizer_type="character",
+        tokenizer_path=tokenizer_path,
+        train_corpus=corpus2
+    )
+
+    # Assert
+    assert loaded_tokenizer.get_vocab_size() == 4 + 4 # 4 special + h,e,l,o
+
+def test_get_tokenizer_trains_and_saves_if_nonexistent(tmp_path):
+    # Arrange
+    corpus = ["new tokenizer"]
+    tokenizer_path = tmp_path / "vocab.json"
+    
+    # Act
+    tokenizer = get_tokenizer(
+        tokenizer_type="character",
+        tokenizer_path=tokenizer_path,
+        train_corpus=corpus
+    )
     
     # Assert
-    assert isinstance(tokenizer, SimpleTokenizer)
+    assert isinstance(tokenizer, CharacterTokenizer)
+    assert tokenizer.get_vocab_size() > 4 # ensure it's not blank
+    assert os.path.exists(tokenizer_path)
 
-def test_get_tokenizer_failure():
-    """
-    Tests that the factory function raises a ValueError when an unknown
-    tokenizer type is requested. This ensures the function is robust.
-    """
-    # Act & Assert
-    with pytest.raises(ValueError):
-        get_tokenizer(tokenizer_type="bpe_is_not_implemented_yet")
+def test_get_tokenizer_raises_error_for_unknown_type():
+    with pytest.raises(ValueError, match="Unknown tokenizer type"):
+        get_tokenizer(tokenizer_type="some_future_tokenizer")
+
+def test_get_tokenizer_raises_error_when_no_path_or_corpus():
+    with pytest.raises(ValueError, match="Must provide either a valid tokenizer_path or a train_corpus"):
+        get_tokenizer(tokenizer_type="character")
