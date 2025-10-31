@@ -25,6 +25,10 @@ import argparse
 from pocket_narrator.model import load_model
 from pocket_narrator.tokenizer import get_tokenizer
 
+# --- Constants and Configuration ---
+TOKENIZER_PATH = "models/character_tokenizer_vocab.json"
+TOKENIZER_TYPE = "character"
+
 def main():
     # --- set up argument parser ---
     parser = argparse.ArgumentParser(description="Generate a story from a prompt using a trained PocketNarrator model.")
@@ -55,7 +59,7 @@ def main():
         return
 
     # --- initialize other components ---
-    tokenizer = get_tokenizer()
+    tokenizer = get_tokenizer(tokenizer_type=TOKENIZER_TYPE, tokenizer_path=TOKENIZER_PATH)
     
     # --- prepare the user's prompt ---
     prompt_text = args.prompt
