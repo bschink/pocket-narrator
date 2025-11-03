@@ -208,8 +208,16 @@ marimo/_lsp/
 __marimo__/
 
 # ============ Additional gitignore ============
+# raw data files
+data/raw/*
+!data/raw/.gitkeep
+!data/raw/toy_story.txt
+
+# processed data files
+data/processed/*
+!data/processed/.gitkeep
+
 # data files
-data/*
 !data/.gitkeep
 !data/mvp_dataset.txt
 
