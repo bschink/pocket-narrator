@@ -7,6 +7,7 @@ huggingface_hub>=0.24
 # Core utilities
 numpy>=1.26
 pandas>=2.2
+matplotlib
 
 # Notebook environment
 jupyter>=1.0
