@@ -66,24 +66,6 @@ class CharacterTokenizer:
 
     def decode_batch(self, token_lists: list[list[int]]) -> list[str]:
         return [self.decode(tokens) for tokens in token_lists]
-
-
-def get_tokenizer(tokenizer_type: str = "simple"):
-    """
-    Factory function to get a tokenizer instance.
-    This is the single entry point for the rest of the application.
-
-    Args:
-        tokenizer_type (str): The type of tokenizer to return.
-
-    Returns:
-        An initialized tokenizer instance.
-    """
-    if tokenizer_type == "simple":
-        print("INFO: Using SimpleCharacterTokenizer.")
-        return SimpleTokenizer()
-    else:
-        raise ValueError(f"Unknown tokenizer type: '{tokenizer_type}'")
     
 
 def get_tokenizer(
