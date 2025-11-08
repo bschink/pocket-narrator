@@ -1,12 +1,12 @@
 """
-This module contains tokenizer implementations and a factory function
-to manage their lifecycle (training, loading, instantiation).
+Contains the implementation of a character-level tokenizer that learns
+its vocabulary from a training corpus.
 """
 import os
 import json
-from pathlib import Path
+from .base_tokenizer import AbstractTokenizer
 
-class CharacterTokenizer:
+class CharacterTokenizer(AbstractTokenizer):
     """A character-level tokenizer that learns its vocabulary from data."""
 
     def __init__(self):
@@ -66,39 +66,3 @@ class CharacterTokenizer:
 
     def decode_batch(self, token_lists: list[list[int]]) -> list[str]:
         return [self.decode(tokens) for tokens in token_lists]
-    
-
-def get_tokenizer(
-    tokenizer_type: str, 
-    tokenizer_path: str = None, 
-    train_corpus: list[str] = None
-):
-    """
-    Factory function to manage the lifecycle of a tokenizer.
-
-    - If tokenizer_path exists, it loads a pre-trained tokenizer.
-    - If it doesn't exist, it trains a new one using train_corpus and saves it.
-
-    Args:
-        tokenizer_type (str): The type of tokenizer ('character').
-        tokenizer_path (str, optional): Path to save/load the tokenizer's vocab file.
-        train_corpus (list[str], optional): Corpus to train on if tokenizer is new.
-
-    Returns:
-        An initialized tokenizer instance.
-    """
-    if tokenizer_type == "character":
-        if tokenizer_path and os.path.exists(tokenizer_path):
-            print(f"INFO: Loading existing CharacterTokenizer from {tokenizer_path}.")
-            return CharacterTokenizer.load(tokenizer_path)
-        elif train_corpus:
-            print(f"INFO: No existing tokenizer found. Training a new CharacterTokenizer.")
-            tokenizer = CharacterTokenizer()
-            tokenizer.train(train_corpus)
-            if tokenizer_path:
-                tokenizer.save(tokenizer_path)
-            return tokenizer
-        else:
-            raise ValueError("Must provide either a valid tokenizer_path or a train_corpus for CharacterTokenizer.")
-    else:
-        raise ValueError(f"Unknown tokenizer type: '{tokenizer_type}'")

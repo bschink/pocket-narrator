@@ -6,21 +6,23 @@ into a functional end-to-end pipeline.
 """
 import sys
 from pathlib import Path
-
-# Add the project root to Python path for robust imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from pocket_narrator.model import get_model
-from pocket_narrator.tokenizer import get_tokenizer
+from pocket_narrator.models import get_model
+from pocket_narrator.tokenizers import get_tokenizer 
 from pocket_narrator.evaluate import run_evaluation
 from pocket_narrator.data_loader import load_text_dataset, split_text, batchify_text
+from pocket_narrator.trainers import get_trainer
 
 # --- Constants and Configuration ---
 DATA_PATH = "data/mvp_dataset.txt"
-TOKENIZER_PATH = "models/character_tokenizer_vocab.json"
 TOKENIZER_TYPE = "character"
-MODEL_SAVE_PATH = "models/mvp_model.pth"
+TOKENIZER_PATH = "tokenizers/character_tokenizer_vocab.json"
+MODEL_TYPE = "ngram"
+MODEL_CONFIG = {"n": 3}
+MODEL_SAVE_PATH = "models/ngram_model.json"
+TRAINER_TYPE = "ngram"
 BATCH_SIZE = 2
 VAL_RATIO = 0.2
 RANDOM_SEED = 42
@@ -43,7 +45,7 @@ def prepare_batch(batch_text: list[str], tokenizer) -> tuple[list[list[int]], li
     return input_tokens_batch, target_tokens_batch
 
 def main():
-    print("--- Starting MVP for PocketNarrator ---")
+    print(f"--- Starting Training Run for {MODEL_TYPE} Model ---")
 
     # --- Data Loading and Preparation ---
     print(f"Loading and splitting dataset from {DATA_PATH}...")
@@ -53,31 +55,34 @@ def main():
 
     # --- Initialization ---
     print("Initializing tokenizer and model...")
-    tokenizer = get_tokenizer(tokenizer_type=TOKENIZER_TYPE, tokenizer_path=TOKENIZER_PATH, train_corpus=train_lines)
-    model = get_model(model_type="mvp", vocab_size=tokenizer.get_vocab_size())
+    tokenizer = get_tokenizer(
+        tokenizer_type=TOKENIZER_TYPE, 
+        tokenizer_path=TOKENIZER_PATH, 
+        train_corpus=train_lines
+    )
 
-    # --- MVP Training Loop (Simulated) ---
-    print("\n--- Starting MVP Training Loop (simulating one step) ---")
-    train_batch_iterator = batchify_text(train_lines, batch_size=BATCH_SIZE, shuffle=True, seed=RANDOM_SEED)
-    train_batch_text = next(train_batch_iterator)
-    train_inputs, train_targets = prepare_batch(train_batch_text, tokenizer)
-    
-    # use the model to get a prediction. later we would compute loss and backpropagate
-    _ = model.predict_sequence_batch(train_inputs)
-    print(f"Processed one training batch of size {len(train_batch_text)}.")
-    print(f"  - Example Input (tokens): {train_inputs[0]}")
-    print(f"  - Example Target (tokens): {train_targets[0]}")
+    model_specific_config = MODEL_CONFIG.copy()
+    model_specific_config['eos_token_id'] = tokenizer.char_to_idx['<eos>']
+    model = get_model(
+        model_type=MODEL_TYPE,
+        vocab_size=tokenizer.get_vocab_size(),
+        **model_specific_config
+    )
 
-    # --- MVP Validation Loop (Simulated) ---
-    print("\n--- Starting MVP Validation ---")
+    trainer = get_trainer(trainer_type=TRAINER_TYPE)
+
+    # --- Training ---
+    print("\n--- Starting Model Training ---")
+    model = trainer.train(model=model, tokenizer=tokenizer, train_data=train_lines)
+    print("Model training complete.")
+
+    # --- Validation ---
+    print("\n--- Starting Validation ---")
     val_batch_iterator = batchify_text(val_lines, batch_size=BATCH_SIZE, shuffle=False)
     val_batch_text = next(val_batch_iterator)
     val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
 
-    # use the model to get a prediction
     predicted_tokens_batch = model.predict_sequence_batch(val_inputs)
-    
-    # decode text representations for evaluation
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     target_text_batch = tokenizer.decode_batch(target_tokens_batch)
 
@@ -96,11 +101,10 @@ def main():
     for metric, value in evaluation_summary.items():
         print(f"{metric}: {value:.4f}")
 
-    # --- Save the Trained Model ---
+    # --- Save Trained Model ---
     model.save(MODEL_SAVE_PATH)
     
-    print("\n--- MVP run finished successfully! ---")
-
+    print(f"\n--- Training run finished successfully! Model saved to {MODEL_SAVE_PATH} ---")
 
 if __name__ == "__main__":
     main()

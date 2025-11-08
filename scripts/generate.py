@@ -1,33 +1,27 @@
 """
 The main generation (inference) script for the PocketNarrator project.
 
-This script loads a trained model and uses it to generate a story continuation
-from a user-provided prompt.
+This script loads a trained model and tokenizer, and uses them to generate
+a story continuation from a user-provided prompt.
 
 How to Use:
-  - To run with the default prompt:
+  - To run with default paths and prompt:
     python scripts/generate.py
 
-  - To provide your own prompt:
-    python scripts/generate.py --prompt "A girl went to the"
+  - To provide your own prompt and model:
+    python scripts.generate.py --prompt "a bird flew" --model_path "models/ngram_model.json"
 
   - To see all options:
     python scripts/generate.py --help
 """
 import sys
 from pathlib import Path
-
-# Add the project root to Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 import argparse
-from pocket_narrator.model import load_model
-from pocket_narrator.tokenizer import get_tokenizer
-
-# --- Constants and Configuration ---
-TOKENIZER_PATH = "models/character_tokenizer_vocab.json"
-TOKENIZER_TYPE = "character"
+from pocket_narrator.models import load_model
+from pocket_narrator.tokenizers import get_tokenizer
 
 def main():
     # --- set up argument parser ---
@@ -36,14 +30,20 @@ def main():
     parser.add_argument(
         "--prompt",
         type=str,
-        default="Once upon a time there was",
+        default="a girl went to the",
         help="The starting text (prompt) for the story generation."
     )
     parser.add_argument(
         "--model_path",
         type=str,
-        default="models/mvp_model.pth",
+        default="models/ngram_model.json",
         help="The path to the saved model artifact."
+    )
+    parser.add_argument(
+        "--tokenizer_path",
+        type=str,
+        default="tokenizers/character_tokenizer_vocab.json",
+        help="The path to the saved tokenizer vocabulary file."
     )
     args = parser.parse_args()
 
@@ -53,27 +53,39 @@ def main():
     try:
         model = load_model(args.model_path)
     except (FileNotFoundError, ValueError) as e:
-        print(f"Error: {e}")
+        print(f"Error loading model: {e}")
         print("Please ensure you have a valid model file. You can create one by running:")
         print("  python scripts/train.py")
         return
 
-    # --- initialize other components ---
-    tokenizer = get_tokenizer(tokenizer_type=TOKENIZER_TYPE, tokenizer_path=TOKENIZER_PATH)
+    # --- load the tokenizer ---
+    try:
+        tokenizer = get_tokenizer(
+            tokenizer_type="character",
+            tokenizer_path=args.tokenizer_path
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error loading tokenizer: {e}")
+        print(f"Please ensure a valid tokenizer exists at '{args.tokenizer_path}'. You can create one by running:")
+        print("  python scripts/train.py")
+        return
     
-    # --- prepare the user's prompt ---
+    # --- prepare users prompt ---
     prompt_text = args.prompt
-    print(f"Input prompt: '{prompt_text}'")
+    print(f"\nInput prompt: '{prompt_text}'")
     
     # --- inference pipeline ---
     prompt_tokens_batch = [tokenizer.encode(prompt_text)]
     predicted_tokens_batch = model.predict_sequence_batch(prompt_tokens_batch)
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     
-    generated_text = predicted_text_batch[0]
-    print(f"Generated text: '{prompt_text}{generated_text}'")
+    # --- display result ---
+    generated_continuation = predicted_text_batch[0]
+    full_story = prompt_text + generated_continuation
     
-    print("--- Generation finished ---")
+    print(f"Generated text: '{full_story}'")
+    
+    print("\n--- Generation finished. ---")
 
 if __name__ == "__main__":
     main()

@@ -224,3 +224,7 @@ data/processed/*
 # model artifacts
 models/*
 !models/.gitkeep
+
+# tokenizer artifacts
+tokenizers/*
+!tokenizers/.gitkeep
