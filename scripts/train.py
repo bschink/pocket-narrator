@@ -207,7 +207,7 @@ def main():
         "batch_size": BATCH_SIZE,
     }
 
-    log_path = os.path.join(args.model_dir, "model_log.txt")
+    log_path = os.path.join(args.model_dir, "model_log.json")
     
     # if file exists, load it; otherwise start a new list
     if os.path.exists(log_path):
