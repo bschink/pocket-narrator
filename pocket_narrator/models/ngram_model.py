@@ -50,10 +50,84 @@ class NGramModel(AbstractLanguageModel):
         else:
             # return random token if context unseen
             return random.randint(0, self.vocab_size - 1)
+        
+    def _would_create_repeated_ngram(self, history: list[int], candidate: int, ngram_size: int) -> bool:
+        """
+        Check if adding `candidate` to `history` would create an n-gram
+        that already appears in the history.
+        """
+        if ngram_size is None or ngram_size < 2:
+            return False
+        if len(history) + 1 < ngram_size:
+            return False
 
-    def predict_sequence_batch(self, input_tokens_batch: list[list[int]], max_length: int = 50) -> list[list[int]]:
+        # last ngram_size-1 tokens + candidate
+        new_ngram = tuple(history[-(ngram_size - 1):] + [candidate])
+        # slide over history
+        for i in range(len(history) - ngram_size + 1):
+            if tuple(history[i : i + ngram_size]) == new_ngram:
+                return True
+        return False
+
+    def _choose_next_token(
+        self,
+        context: tuple,
+        generated_sequence: list[int],
+        strategy: str,
+        no_repeat_ngram_size: int
+    ) -> int:
+        """
+        Choose the next token according to the given strategy:
+        - 'greedy': most frequent continuation (current default)
+        - 'sample': sample from the distribution of continuations
+        Optionally avoid repeating n-grams of size `no_repeat_ngram_size`.
+        """
+        # unseen context fallback
+        if context not in self.ngram_counts:
+            return random.randint(0, self.vocab_size - 1)
+
+        items = list(self.ngram_counts[context].items())  # (token, count)
+
+        # optional no-repeat n-gram filtering
+        if no_repeat_ngram_size is not None:
+            filtered = []
+            for token, count in items:
+                if not self._would_create_repeated_ngram(
+                    generated_sequence,
+                    token,
+                    no_repeat_ngram_size,
+                ):
+                    filtered.append((token, count))
+            if filtered:
+                items = filtered
+
+        if not items:
+            # extremely rare fallback
+            return random.randint(0, self.vocab_size - 1)
+
+        # strategy selection
+        strategy = strategy or "greedy"
+        if strategy == "sample":
+            tokens, counts = zip(*items)
+            total = sum(counts)
+            probs = [c / total for c in counts]
+            return random.choices(tokens, weights=probs, k=1)[0]
+        else:
+            # greedy (original behavior)
+            return max(items, key=lambda x: x[1])[0]
+        
+    def predict_sequence_batch(
+        self,
+        input_tokens_batch: list[list[int]],
+        max_length: int = 50,
+        strategy: str = "greedy",
+        no_repeat_ngram_size: int = None,
+    ) -> list[list[int]]:
         """
         Generates a sequence continuation for each prompt in the batch.
+        - strategy: 'greedy' or 'sample'
+        - no_repeat_ngram_size: if set (e.g., 3), try to avoid repeating
+          n-grams of that size in the generated sequence.
         Stops generating if max_length is reached or an <eos> token is produced.
         """
         predictions = []
@@ -62,7 +136,12 @@ class NGramModel(AbstractLanguageModel):
             while len(generated_sequence) < len(prompt_tokens) + max_length:
                 # last n-1 tokens of the current sequence
                 context = tuple(generated_sequence[-(self.n - 1):])
-                next_token = self._predict_next_token(context)
+                next_token = self._choose_next_token(
+                    context,
+                    generated_sequence,
+                    strategy=strategy,
+                    no_repeat_ngram_size=no_repeat_ngram_size,
+                )
 
                 if next_token == self.eos_token_id:
                     break
@@ -72,6 +151,7 @@ class NGramModel(AbstractLanguageModel):
             # return generated part only
             predictions.append(generated_sequence[len(prompt_tokens):])
         return predictions
+
 
     def save(self, model_path: str):
         """Saves the n-gram model's counts to a JSON file."""
