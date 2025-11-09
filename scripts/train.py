@@ -9,7 +9,15 @@ into a functional end-to-end pipeline.
 PYTHONPATH=. python3 scripts/train.py \
   --generation_strategy sample \
   --no_repeat_ngram_size 3 \
-  --data data/processed/TinyStories/TinyStories-train.bos_eos_30.txt
+  --data data/processed/TinyStories/TinyStories-train.bos_eos_30k.txt
+
+  
+  PYTHONPATH=. python3 scripts/train.py \
+  --data data/processed/TinyStories/TinyStories-train.bos_eos_30k.txt \
+  --generation_strategy sample \
+  --no_repeat_ngram_size 3 \
+  --model_dir models/cool_models \
+  --model_name ngram_tinystories_30.model
 
 
 """
@@ -82,6 +90,19 @@ def main():
         default=None,
         help="If set (e.g. 3), avoid repeating n-grams of this size during validation generation.",
     )
+    parser.add_argument(
+        "--model_dir",
+        type=str,
+        default="models",
+        help="Directory where the trained model will be saved.",
+    )
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default=None,
+        help="Filename for the model (e.g. 'my_experiment.model'). "
+             "If not given, a name based on model type and timestamp will be used.",
+    )
     args = parser.parse_args()
     
     print(f"--- Starting Training Run for {MODEL_TYPE} Model ---")
@@ -146,10 +167,68 @@ def main():
     for metric, value in evaluation_summary.items():
         print(f"{metric}: {value:.4f}")
 
+        # --- Determine model save path ---
+    os.makedirs(args.model_dir, exist_ok=True)
+
+    if args.model_name:
+        model_filename = args.model_name
+    else:
+        # default: <model_type>_YYYYMMDD_HHMMSS.model
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_filename = f"{MODEL_TYPE}_{timestamp}.model"
+
+    model_path = os.path.join(args.model_dir, model_filename)
+
+    if os.path.exists(model_path):
+        print(f"ERROR: Model file '{model_path}' already exists. "
+              f"Choose a different --model_name or delete the existing file.")
+        sys.exit(1)
+
+
     # --- Save Trained Model ---
-    model.save(MODEL_SAVE_PATH)
+    model.save(model_path)
     
-    print(f"\n--- Training run finished successfully! Model saved to {MODEL_SAVE_PATH} ---")
+    print(f"\n--- Training run finished successfully! Model saved to {model_path} ---")
+
+    # --- Append metadata to model log to keep track ---
+    log_entry = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "model_path": model_path,
+        "model_name": model_filename,
+        "model_type": MODEL_TYPE,
+        "trainer_type": TRAINER_TYPE,
+        "tokenizer_type": TOKENIZER_TYPE,
+        "tokenizer_path": TOKENIZER_PATH,
+        "data_path": args.data,
+        "generation_strategy": args.generation_strategy,
+        "no_repeat_ngram_size": args.no_repeat_ngram_size,
+        "model_config": model_specific_config,
+        "val_ratio": VAL_RATIO,
+        "batch_size": BATCH_SIZE,
+    }
+
+    log_path = os.path.join(args.model_dir, "model_log.txt")
+    
+    # if file exists, load it; otherwise start a new list
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                log_data = json.load(f)
+        except json.JSONDecodeError:
+            print("WARNING: model_log.json is malformed, creating a new one.")
+            log_data = []
+    else:
+        log_data = []
+
+    # append new entry
+    log_data.append(log_entry)
+
+    # write back pretty-printed JSON
+    with open(log_path, "w", encoding="utf-8") as f:
+        json.dump(log_data, f, indent=2)
+
+    print(f"Model metadata appended to log: {log_path}")
+
 
 if __name__ == "__main__":
     main()

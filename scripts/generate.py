@@ -6,10 +6,15 @@ a story continuation from a user-provided prompt.
 
 How to Use:
   - To run with default paths and prompt:
-    python scripts/generate.py
+    python scripts/generate.py. ------> requires the existence of a trained model at models/ngram_model.json
 
   - To provide your own prompt and model:
-    python scripts.generate.py --prompt "a bird flew" --model_path "models/ngram_model.json"
+
+    PYTHONPATH=. python3 scripts/generate.py \
+    --prompt "the tree is" \
+    --model_path models/ngram_tinystories_30k.model \
+    --generation_strategy sample \
+    --no_repeat_ngram_size 3
 
   - To see all options:
     python scripts/generate.py --help
@@ -20,6 +25,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 import argparse
+import os
 from pocket_narrator.models import load_model
 from pocket_narrator.tokenizers import get_tokenizer
 
