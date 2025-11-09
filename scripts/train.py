@@ -3,11 +3,25 @@ The main training script for the PocketNarrator project.
 
 This script connects all modular components (data loader, tokenizer, model, evaluator)
 into a functional end-to-end pipeline.
+
+
+
+PYTHONPATH=. python3 scripts/train.py \
+  --generation_strategy sample \
+  --no_repeat_ngram_size 3 \
+  --data data/processed/TinyStories/TinyStories-train.bos_eos_30.txt
+
+
 """
 import sys
 from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+import argparse
+import os
+from datetime import datetime
+import json
 
 from pocket_narrator.models import get_model
 from pocket_narrator.tokenizers import get_tokenizer 
@@ -15,7 +29,7 @@ from pocket_narrator.evaluate import run_evaluation
 from pocket_narrator.data_loader import load_text_dataset, split_text, batchify_text
 from pocket_narrator.trainers import get_trainer
 
-# --- Constants and Configuration ---
+# --- Constants and Configuration (which can get overridden by input arguments)---
 DATA_PATH = "data/mvp_dataset.txt"
 TOKENIZER_TYPE = "character"
 TOKENIZER_PATH = "tokenizers/character_tokenizer_vocab.json"
@@ -26,6 +40,7 @@ TRAINER_TYPE = "ngram"
 BATCH_SIZE = 2
 VAL_RATIO = 0.2
 RANDOM_SEED = 42
+
 
 def prepare_batch(batch_text: list[str], tokenizer) -> tuple[list[list[int]], list[list[int]]]:
     """
@@ -45,11 +60,35 @@ def prepare_batch(batch_text: list[str], tokenizer) -> tuple[list[list[int]], li
     return input_tokens_batch, target_tokens_batch
 
 def main():
+
+        # --- CLI arguments ---
+    parser = argparse.ArgumentParser(description="Train an n-gram PocketNarrator model.")
+    parser.add_argument(
+        "--data",
+        type=str,
+        default=DATA_PATH,
+        help=f"Path to training dataset (default: {DATA_PATH})",
+    )
+    parser.add_argument(
+        "--generation_strategy",
+        type=str,
+        choices=["greedy", "sample"],
+        default="greedy",
+        help="Generation strategy for validation output (does not affect training).",
+    )
+    parser.add_argument(
+        "--no_repeat_ngram_size",
+        type=int,
+        default=None,
+        help="If set (e.g. 3), avoid repeating n-grams of this size during validation generation.",
+    )
+    args = parser.parse_args()
+    
     print(f"--- Starting Training Run for {MODEL_TYPE} Model ---")
 
     # --- Data Loading and Preparation ---
-    print(f"Loading and splitting dataset from {DATA_PATH}...")
-    all_lines = load_text_dataset(DATA_PATH)
+    print(f"Loading and splitting dataset from {args.data}...")
+    all_lines = load_text_dataset(args.data)
     train_lines, val_lines = split_text(all_lines, val_ratio=VAL_RATIO, seed=RANDOM_SEED)
     print(f"Dataset loaded: {len(train_lines)} training samples, {len(val_lines)} validation samples.")
 
@@ -81,8 +120,14 @@ def main():
     val_batch_iterator = batchify_text(val_lines, batch_size=BATCH_SIZE, shuffle=False)
     val_batch_text = next(val_batch_iterator)
     val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
+    
+    val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
 
-    predicted_tokens_batch = model.predict_sequence_batch(val_inputs)
+    predicted_tokens_batch = model.predict_sequence_batch(
+        val_inputs,
+        strategy=args.generation_strategy,
+        no_repeat_ngram_size=args.no_repeat_ngram_size,
+    )
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     target_text_batch = tokenizer.decode_batch(target_tokens_batch)
 

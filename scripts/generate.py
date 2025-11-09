@@ -45,6 +45,20 @@ def main():
         default="tokenizers/character_tokenizer_vocab.json",
         help="The path to the saved tokenizer vocabulary file."
     )
+    parser.add_argument(
+        "--generation_strategy",
+        type=str,
+        choices=["greedy", "sample"],
+        default="greedy",
+        help="How to pick next tokens: 'greedy' or 'sample'.",
+    )
+    parser.add_argument(
+        "--no_repeat_ngram_size",
+        type=int,
+        default=None,
+        help="If set (e.g. 3), avoid repeating n-grams of this size.",
+    )
+
     args = parser.parse_args()
 
     print("--- Starting Generation Script ---")
@@ -76,7 +90,11 @@ def main():
     
     # --- inference pipeline ---
     prompt_tokens_batch = [tokenizer.encode(prompt_text)]
-    predicted_tokens_batch = model.predict_sequence_batch(prompt_tokens_batch)
+    predicted_tokens_batch = model.predict_sequence_batch(
+        prompt_tokens_batch,
+        strategy=args.generation_strategy,
+        no_repeat_ngram_size=args.no_repeat_ngram_size,
+    )
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     
     # --- display result ---
