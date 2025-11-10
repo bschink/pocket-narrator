@@ -119,7 +119,7 @@ class NGramModel(AbstractLanguageModel):
     def predict_sequence_batch(
         self,
         input_tokens_batch: list[list[int]],
-        max_length: int = 50,
+        max_length: int = 400,
         strategy: str = "greedy",
         no_repeat_ngram_size: int = None,
     ) -> list[list[int]]:

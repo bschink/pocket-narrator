@@ -12,7 +12,7 @@ How to Use:
 
     PYTHONPATH=. python3 scripts/generate.py \
     --prompt "the tree is" \
-    --model_path models/ngram_tinystories_30k.model \
+    --model_path models/ngram_all_tinystories.model \
     --generation_strategy sample \
     --no_repeat_ngram_size 3
 
