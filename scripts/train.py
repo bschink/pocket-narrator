@@ -39,8 +39,8 @@ from pocket_narrator.trainers import get_trainer
 
 # --- Constants and Configuration (which can get overridden by input arguments)---
 DATA_PATH = "data/mvp_dataset.txt"
-TOKENIZER_TYPE = "character"
-TOKENIZER_PATH = "tokenizers/character_tokenizer_vocab.json"
+TOKENIZER_TYPE = "bpe"
+TOKENIZER_PATH = "tokenizers/bpe_tokenizer/"
 MODEL_TYPE = "ngram"
 MODEL_CONFIG = {"n": 3}
 MODEL_SAVE_PATH = "models/ngram_model.json"
@@ -69,7 +69,7 @@ def prepare_batch(batch_text: list[str], tokenizer) -> tuple[list[list[int]], li
 
 def main():
 
-        # --- CLI arguments ---
+    # --- CLI arguments ---
     parser = argparse.ArgumentParser(description="Train an n-gram PocketNarrator model.")
     parser.add_argument(
         "--data",
@@ -77,6 +77,9 @@ def main():
         default=DATA_PATH,
         help=f"Path to training dataset (default: {DATA_PATH})",
     )
+    parser.add_argument("--tokenizer_type", type=str, default="bpe", help="Type of tokenizer to use ('character', 'bpe').")
+    parser.add_argument("--tokenizer_path", type=str, default="tokenizers/bpe_tokenizer/", help="Path to save/load tokenizer.")
+    parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
     parser.add_argument(
         "--generation_strategy",
         type=str,
@@ -116,13 +119,26 @@ def main():
     # --- Initialization ---
     print("Initializing tokenizer and model...")
     tokenizer = get_tokenizer(
-        tokenizer_type=TOKENIZER_TYPE, 
-        tokenizer_path=TOKENIZER_PATH, 
-        train_corpus=train_lines
+        tokenizer_type=args.tokenizer_type, 
+        tokenizer_path=args.tokenizer_path,
+        train_corpus=train_lines,
+        **args.tokenizer_config
     )
 
     model_specific_config = MODEL_CONFIG.copy()
-    model_specific_config['eos_token_id'] = tokenizer.char_to_idx['<eos>']
+    
+    # Get EOS token ID based on tokenizer type
+    if hasattr(tokenizer, 'char_to_idx'):
+        # Character tokenizer
+        model_specific_config['eos_token_id'] = tokenizer.char_to_idx['<eos>']
+    elif hasattr(tokenizer, 'special_tokens') and '<eos>' in tokenizer.special_tokens:
+        # BPE tokenizer with registered special tokens
+        model_specific_config['eos_token_id'] = tokenizer.special_tokens['<eos>']
+    else:
+        # No EOS token found, use None or vocab_size - 1 as fallback
+        print("WARNING: No <eos> token found in tokenizer. Using None for eos_token_id.")
+        model_specific_config['eos_token_id'] = None
+    
     model = get_model(
         model_type=MODEL_TYPE,
         vocab_size=tokenizer.get_vocab_size(),

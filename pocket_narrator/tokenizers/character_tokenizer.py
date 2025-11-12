@@ -29,26 +29,45 @@ class CharacterTokenizer(AbstractTokenizer):
         print(f"INFO: Vocabulary built. Size: {self.get_vocab_size()} tokens.")
 
     def save(self, save_path: str):
-        """Saves the tokenizer's vocabulary to a single JSON file."""
+        """
+        Saves the tokenizer's vocabulary to a specified directory.
+
+        Args:
+            save_path (str): The path to the DIRECTORY where the vocab file will be saved.
+        """
         if not self.vocabulary:
             raise ValueError("Cannot save an untrained tokenizer.")
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        with open(save_path, 'w', encoding='utf-8') as f:
+        
+        print(f"INFO: Saving Character tokenizer to directory: {save_path}")
+        os.makedirs(save_path, exist_ok=True)
+        
+        file_path = os.path.join(save_path, "vocab.json")
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(self.vocabulary, f, ensure_ascii=False, indent=2)
-        print(f"INFO: Tokenizer vocabulary saved to {save_path}")
-
+    
     @classmethod
     def load(cls, load_path: str):
-        """Loads a tokenizer's vocabulary from a single JSON file."""
-        if not os.path.exists(load_path):
-            raise FileNotFoundError(f"Tokenizer vocabulary not found at {load_path}")
+        """
+        Loads a tokenizer's vocabulary from a directory.
+
+        Args:
+            load_path (str): The path to the DIRECTORY containing the vocab.json file.
+        """
+        print(f"INFO: Loading Character tokenizer from directory: {load_path}")
+        file_path = os.path.join(load_path, "vocab.json")
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Tokenizer vocabulary not found at {file_path}")
+
         tokenizer = cls()
-        with open(load_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             tokenizer.vocabulary = json.load(f)
+            
         tokenizer.char_to_idx = {char: idx for idx, char in enumerate(tokenizer.vocabulary)}
         tokenizer.idx_to_char = {idx: char for idx, char in enumerate(tokenizer.vocabulary)}
         tokenizer.unk_token_id = tokenizer.char_to_idx.get('<unk>')
-        print(f"INFO: Tokenizer loaded from {load_path}. Vocab size: {tokenizer.get_vocab_size()}")
+        
         return tokenizer
 
     def encode(self, text: str) -> list[int]:

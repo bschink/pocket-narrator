@@ -8,14 +8,18 @@ Usage example:
   --input data/raw/TinyStories/TinyStories-train.txt \
   --output data/processed/TinyStories/TinyStories-train.bos_eos.txt
 """
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 import argparse
 from pocket_narrator.data_loader import preprocess_txt_to_bos_eos
 
 def main():
     ap = argparse.ArgumentParser(description="Preprocess a .txt corpus into <bos>/<eos>-wrapped documents.")
-    ap.add_argument("--input", required=True, help="Path to raw .txt (e.g., TinyStories-train.txt)")
-    ap.add_argument("--output", required=True, help="Path to write preprocessed file")
+    ap.add_argument("--input", default="data/raw/TinyStories/TinyStories-train.txt", help="Path to raw .txt (e.g., TinyStories-train.txt)")
+    ap.add_argument("--output", default="data/processed/TinyStories/TinyStories-train.bos_eos.txt", help="Path to write preprocessed file")
     ap.add_argument("--delimiter", default="<|endoftext|>", help="Document delimiter token in the raw file")
     ap.add_argument("--bos", default="<bos>", help="BOS token to insert")
     ap.add_argument("--eos", default="<eos>", help="EOS token to insert")

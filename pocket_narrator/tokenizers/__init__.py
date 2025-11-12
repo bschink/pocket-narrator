@@ -5,11 +5,13 @@ for creating, loading, and managing all tokenizer implementations.
 import os
 from .base_tokenizer import AbstractTokenizer
 from .character_tokenizer import CharacterTokenizer
+from .bpe_tokenizer import BPETokenizer
 
 def get_tokenizer(
     tokenizer_type: str, 
     tokenizer_path: str = None, 
-    train_corpus: list[str] = None
+    train_corpus: list[str] = None,
+    **kwargs
 ) -> AbstractTokenizer:
     """
     Factory function to manage the lifecycle of a tokenizer.
@@ -19,6 +21,8 @@ def get_tokenizer(
     """
     if tokenizer_type == "character":
         TokenizerClass = CharacterTokenizer
+    elif tokenizer_type == "bpe":
+        TokenizerClass = BPETokenizer
     else:
         raise ValueError(f"Unknown tokenizer type: '{tokenizer_type}'")
 
@@ -27,7 +31,7 @@ def get_tokenizer(
         return TokenizerClass.load(tokenizer_path)
     elif train_corpus:
         print(f"INFO: No existing tokenizer found. Training a new {TokenizerClass.__name__}.")
-        tokenizer = TokenizerClass()
+        tokenizer = TokenizerClass(**kwargs)
         tokenizer.train(train_corpus)
         if tokenizer_path:
             tokenizer.save(tokenizer_path)

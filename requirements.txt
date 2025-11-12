@@ -16,3 +16,5 @@ notebook>=7.0
 # Progress bars and visualization helpers
 tqdm>=4.66
 
+# regular expressions
+regex

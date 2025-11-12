@@ -4,6 +4,9 @@ Defines the abstract base class for all tokenizers.
 from abc import ABC, abstractmethod
 
 class AbstractTokenizer(ABC):
+    def __init__(self):
+        super().__init__()
+
     @abstractmethod
     def train(self, corpus: list[str]):
         """Trains the tokenizer from a corpus of text."""
