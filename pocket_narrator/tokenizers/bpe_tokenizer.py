@@ -15,7 +15,7 @@ GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1
 class BPETokenizer(AbstractTokenizer):
     """A BPE tokenizer with Regex that learns its vocabulary from data."""
     
-    def __init__(self, vocab_size: int, pattern=GPT4_SPLIT_PATTERN):
+    def __init__(self, vocab_size: int, special_tokens: dict[str, int], pattern=GPT4_SPLIT_PATTERN):
         """
         - pattern: optional string to override the default
         - special_tokens: str -> int dictionary of special tokens
@@ -28,9 +28,10 @@ class BPETokenizer(AbstractTokenizer):
         self.merges = {} # (int, int) -> int
         self.special_tokens = {}
         self.inverse_special_tokens = {}
-        self.vocab = self._build_vocab() # int -> bytes
         self.pattern =  pattern
         self.compiled_pattern = re.compile(self.pattern)
+        self.register_special_tokens(special_tokens)
+        self.vocab = self._build_vocab() # int -> bytes
     
     def train(self, corpus: list[str], verbose: bool = False):
         # join to single block of text
@@ -261,14 +262,13 @@ class BPETokenizer(AbstractTokenizer):
         if not os.path.exists(model_file):
             raise FileNotFoundError(f"Required model file 'bpe.model' not found in {load_path}")
 
-        tokenizer = cls(vocab_size=256)
-
         merges = {}
         special_tokens = {}
         idx = 256
+        pattern = GPT4_SPLIT_PATTERN
+        
         with open(model_file, 'r', encoding="utf-8") as f:
-            tokenizer.pattern = f.readline().strip()
-            tokenizer.compiled_pattern = re.compile(tokenizer.pattern)
+            pattern = f.readline().strip()
             num_special = int(f.readline().strip())
             for _ in range(num_special):
                 special, special_idx = f.readline().strip().split()
@@ -278,12 +278,10 @@ class BPETokenizer(AbstractTokenizer):
                 merges[(idx1, idx2)] = idx
                 idx += 1
         
+        tokenizer = cls(vocab_size=256, special_tokens=special_tokens, pattern=pattern)
+        
         tokenizer.merges = merges
-        tokenizer.special_tokens = special_tokens
-        tokenizer.inverse_special_tokens = {v: k for k, v in special_tokens.items()}
-        
         tokenizer.vocab = tokenizer._build_vocab()
-        
         tokenizer.vocab_size = len(tokenizer.vocab)
 
         return tokenizer

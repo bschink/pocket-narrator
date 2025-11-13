@@ -9,8 +9,8 @@ from .base_tokenizer import AbstractTokenizer
 class CharacterTokenizer(AbstractTokenizer):
     """A character-level tokenizer that learns its vocabulary from data."""
 
-    def __init__(self):
-        self.special_tokens = ['<pad>', '<unk>', '<bos>', '<eos>']
+    def __init__(self, special_tokens: dict[str, int]):
+        self.special_tokens = list(special_tokens.keys())
         self.vocabulary = []
         self.char_to_idx = {}
         self.idx_to_char = {}
@@ -60,9 +60,16 @@ class CharacterTokenizer(AbstractTokenizer):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Tokenizer vocabulary not found at {file_path}")
 
-        tokenizer = cls()
         with open(file_path, 'r', encoding='utf-8') as f:
-            tokenizer.vocabulary = json.load(f)
+            vocabulary = json.load(f)
+        
+        special_tokens = {}
+        for idx, char in enumerate(vocabulary):
+            if char.startswith('<') and char.endswith('>'):
+                special_tokens[char] = idx
+        
+        tokenizer = cls(special_tokens=special_tokens)
+        tokenizer.vocabulary = vocabulary
             
         tokenizer.char_to_idx = {char: idx for idx, char in enumerate(tokenizer.vocabulary)}
         tokenizer.idx_to_char = {idx: char for idx, char in enumerate(tokenizer.vocabulary)}

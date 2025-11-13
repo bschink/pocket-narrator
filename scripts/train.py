@@ -79,7 +79,7 @@ def main():
     )
     parser.add_argument("--tokenizer_type", type=str, default="bpe", help="Type of tokenizer to use ('character', 'bpe').")
     parser.add_argument("--tokenizer_path", type=str, default="tokenizers/bpe_tokenizer/", help="Path to save/load tokenizer.")
-    parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
+    parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024, "special_tokens": {"<bos>": 1025, "<eos>": 1026}}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
     parser.add_argument(
         "--generation_strategy",
         type=str,

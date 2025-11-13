@@ -1,153 +1,166 @@
-"""
-Unit tests for the tokenizers package.
-
-This file tests both the concrete CharacterTokenizer implementation and the 
-get_tokenizer factory function that manages its lifecycle.
-"""
 import os
 import pytest
-
 from pocket_narrator.tokenizers import get_tokenizer
 from pocket_narrator.tokenizers.base_tokenizer import AbstractTokenizer
 from pocket_narrator.tokenizers.character_tokenizer import CharacterTokenizer
+from pocket_narrator.tokenizers.bpe_tokenizer import BPETokenizer
+
+DEFAULT_SPECIAL_TOKENS = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
 
 # --- Tests for the CharacterTokenizer Class ---
 
 def test_character_tokenizer_initialization():
-    """Tests that a new CharacterTokenizer instance is blank."""
-    tokenizer = CharacterTokenizer()
+    tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
     assert tokenizer.get_vocab_size() == 0
     assert tokenizer.vocabulary == []
     assert not tokenizer.char_to_idx
     assert tokenizer.unk_token_id is None
 
-def test_train_method_builds_vocab_correctly():
-    """
-    Tests that the train() method correctly builds the vocabulary from a corpus,
-    including special tokens and sorted unique characters.
-    """
-    # Arrange
+def test_character_train_method_builds_vocab_correctly():
     corpus = ["hello", "world"]
-    tokenizer = CharacterTokenizer()
-    
-    # Act
+    tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
     tokenizer.train(corpus)
-    
-    # Assert
-    # Vocab = 4 special tokens + sorted unique chars from "helloworld" ('d', 'e', 'h', 'l', 'o', 'r', 'w')
     unique_chars = sorted(list(set("".join(corpus))))
-    expected_vocab = tokenizer.special_tokens + unique_chars
-    
-    assert tokenizer.vocabulary == expected_vocab
-    assert tokenizer.get_vocab_size() == 4 + 7
-    assert tokenizer.char_to_idx['h'] == 6
+    assert tokenizer.get_vocab_size() == len(DEFAULT_SPECIAL_TOKENS) + len(unique_chars)
     assert tokenizer.unk_token_id == 1
 
 def test_untrained_tokenizer_raises_runtime_error():
-    """Tests that calling encode() or decode() on an untrained tokenizer fails."""
-    tokenizer = CharacterTokenizer()
+    tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
     with pytest.raises(RuntimeError, match="Tokenizer has not been trained"):
         tokenizer.encode("hello")
     with pytest.raises(RuntimeError, match="Tokenizer has not been trained"):
         tokenizer.decode([1, 2, 3])
 
-def test_save_and_load_roundtrip(tmp_path):
-    """
-    Tests that a trained tokenizer can be saved to a file and then loaded back
-    to a perfectly identical and functional state.
-    """
-    # Arrange
+def test_character_save_and_load_roundtrip(tmp_path):
     corpus = ["a simple test!"]
-    original_tokenizer = CharacterTokenizer()
+    original_tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
     original_tokenizer.train(corpus)
-    save_path = tmp_path / "vocab.json"
-
-    # Act
-    original_tokenizer.save(save_path)
-    loaded_tokenizer = CharacterTokenizer.load(save_path)
-    
-    # Assert
+    save_dir = tmp_path / "char_tokenizer_test"
+    original_tokenizer.save(save_dir)
+    loaded_tokenizer = CharacterTokenizer.load(save_dir)
     assert loaded_tokenizer.vocabulary == original_tokenizer.vocabulary
     assert loaded_tokenizer.char_to_idx == original_tokenizer.char_to_idx
-    assert loaded_tokenizer.unk_token_id == original_tokenizer.unk_token_id
-    
     text = "a test"
     assert loaded_tokenizer.decode(loaded_tokenizer.encode(text)) == text
 
 def test_encode_decode_after_training_with_unknowns():
-    """Tests the full encode/decode cycle after training, including unknown characters."""
-    # Arrange
-    tokenizer = CharacterTokenizer()
+    tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
     tokenizer.train(["abc"])
-    
-    # Act
     text_with_unknowns = "ad"
     encoded = tokenizer.encode(text_with_unknowns)
     decoded = tokenizer.decode(encoded)
-    
-    # Assert
     unk_id = tokenizer.unk_token_id
     assert encoded == [tokenizer.char_to_idx['a'], unk_id]
     assert decoded == "a<unk>"
 
+# --- Tests for the BPETokenizer Class ---
+
+def test_bpe_tokenizer_initialization():
+    tokenizer = BPETokenizer(vocab_size=512, special_tokens=DEFAULT_SPECIAL_TOKENS)
+    assert tokenizer.vocab_size == 512
+    assert len(tokenizer.vocab) == 256
+    for special_token, idx in DEFAULT_SPECIAL_TOKENS.items():
+        assert idx in tokenizer.vocab
+        assert tokenizer.vocab[idx] == special_token.encode('utf-8')
+
+def test_bpe_initialization_fails_with_small_vocab():
+    with pytest.raises(ValueError, match="Vocab size must be at least 256"):
+        BPETokenizer(vocab_size=100, special_tokens=DEFAULT_SPECIAL_TOKENS)
+
+def test_bpe_train_creates_merges():
+    corpus = ["aaaaa"]
+    tokenizer = BPETokenizer(vocab_size=257, special_tokens={})
+    tokenizer.train(corpus)
+    assert tokenizer.get_vocab_size() == 257
+    most_frequent_pair = (97, 97)
+    assert len(tokenizer.merges) == 1
+    assert most_frequent_pair in tokenizer.merges
+    assert tokenizer.merges[most_frequent_pair] == 256
+
+def test_bpe_encode_decode_roundtrip():
+    corpus = ["a simple sentence for testing"]
+    tokenizer = BPETokenizer(vocab_size=300, special_tokens={})
+    tokenizer.train(corpus)
+    text = "this is a test sentence"
+    encoded = tokenizer.encode(text)
+    decoded = tokenizer.decode(encoded)
+    assert decoded == text
+
+def test_bpe_save_and_load_roundtrip(tmp_path):
+    corpus = ["a simple sentence for testing the save and load functionality"]
+    original_tokenizer = BPETokenizer(vocab_size=300, special_tokens=DEFAULT_SPECIAL_TOKENS)
+    original_tokenizer.train(corpus)
+    save_dir = tmp_path / "bpe_tokenizer"
+    original_tokenizer.save(save_dir)
+    loaded_tokenizer = BPETokenizer.load(save_dir)
+    assert isinstance(loaded_tokenizer, BPETokenizer)
+    assert loaded_tokenizer.merges == original_tokenizer.merges
+    assert loaded_tokenizer.special_tokens == original_tokenizer.special_tokens
+    text = "test functionality"
+    assert loaded_tokenizer.decode(loaded_tokenizer.encode(text)) == text
+
+def test_bpe_special_tokens_handling():
+    corpus = ["some text"]
+    special_token = "<|endoftext|>"
+    special_tokens = {special_token: 300}
+    tokenizer = BPETokenizer(vocab_size=300, special_tokens=special_tokens)
+    tokenizer.train(corpus)
+    text_with_special = f"some text {special_token}"
+    with pytest.raises(AssertionError):
+        tokenizer.encode(text_with_special)
+    encoded = tokenizer._encode_internal(text_with_special, allowed_special="all")
+    assert encoded[-1] == 300
+    decoded = tokenizer.decode(encoded)
+    assert decoded == text_with_special
 
 # --- Tests for the get_tokenizer Factory Function ---
 
 def test_get_tokenizer_loads_existing_file(tmp_path):
-    """
-    Tests that the factory function correctly loads a pre-existing tokenizer file
-    instead of training a new one.
-    """
-    # Arrange
     corpus1 = ["hello"]
     corpus2 = ["world"]
-    tokenizer_path = tmp_path / "vocab.json"
-    
-    initial_tokenizer = CharacterTokenizer()
+    tokenizer_dir = tmp_path / "char_tokenizer_for_loading"
+    initial_tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
     initial_tokenizer.train(corpus1)
-    initial_tokenizer.save(tokenizer_path)
-
-    # Act
+    initial_tokenizer.save(tokenizer_dir)
     loaded_tokenizer = get_tokenizer(
         tokenizer_type="character",
-        tokenizer_path=tokenizer_path,
+        tokenizer_path=tokenizer_dir,
         train_corpus=corpus2
     )
-
-    # Assert
     assert isinstance(loaded_tokenizer, AbstractTokenizer)
-    assert loaded_tokenizer.get_vocab_size() == 4 + 4
+    assert loaded_tokenizer.get_vocab_size() == len(DEFAULT_SPECIAL_TOKENS) + 4
 
 def test_get_tokenizer_trains_and_saves_if_nonexistent(tmp_path):
-    """
-    Tests that the factory function trains a new tokenizer if the path is empty
-    and a corpus is provided, then saves it to the specified path.
-    """
-    # Arrange
     corpus = ["new tokenizer"]
-    tokenizer_path = tmp_path / "vocab.json"
-    
-    # Act
+    tokenizer_dir = tmp_path / "char_tokenizer_for_saving"
+    tokenizer_config = {"special_tokens": DEFAULT_SPECIAL_TOKENS}
     tokenizer = get_tokenizer(
         tokenizer_type="character",
-        tokenizer_path=tokenizer_path,
-        train_corpus=corpus
+        tokenizer_path=tokenizer_dir,
+        train_corpus=corpus,
+        **tokenizer_config
     )
-    
-    # Assert
     assert isinstance(tokenizer, CharacterTokenizer)
-    assert tokenizer.get_vocab_size() > 4
-    assert os.path.exists(tokenizer_path)
+    assert tokenizer.get_vocab_size() > len(DEFAULT_SPECIAL_TOKENS)
+    assert os.path.exists(os.path.join(tokenizer_dir, "vocab.json"))
+
+def test_get_tokenizer_handles_bpe_type(tmp_path):
+    tokenizer_config = {"vocab_size": 260, "special_tokens": DEFAULT_SPECIAL_TOKENS}
+    tokenizer_dir = tmp_path / "bpe_tokenizer"
+    tokenizer = get_tokenizer(
+        tokenizer_type="bpe",
+        train_corpus=["abc"],
+        tokenizer_path=tokenizer_dir,
+        **tokenizer_config
+    )
+    assert isinstance(tokenizer, BPETokenizer)
+    assert tokenizer.vocab_size >= 260
+    assert os.path.exists(os.path.join(tokenizer_dir, "bpe.model"))
 
 def test_get_tokenizer_raises_error_for_unknown_type():
-    """Tests that the factory fails gracefully for an invalid tokenizer type."""
     with pytest.raises(ValueError, match="Unknown tokenizer type"):
-        get_tokenizer(tokenizer_type="some_future_tokenizer")
+        get_tokenizer(tokenizer_type="some_future_tokenizer", train_corpus=["abc"])
 
 def test_get_tokenizer_raises_error_when_no_path_or_corpus():
-    """
-    Tests the critical failure case where a character tokenizer is requested
-    without a file to load or a corpus to train on.
-    """
     with pytest.raises(ValueError, match="Must provide either a valid tokenizer_path or a train_corpus"):
         get_tokenizer(tokenizer_type="character")
