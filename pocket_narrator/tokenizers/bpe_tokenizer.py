@@ -32,40 +32,85 @@ class BPETokenizer(AbstractTokenizer):
         self.compiled_pattern = re.compile(self.pattern)
         self.register_special_tokens(special_tokens)
         self.vocab = self._build_vocab() # int -> bytes
-    
+
     def train(self, corpus: list[str], verbose: bool = False):
-        # join to single block of text
         text = "".join(corpus)
         num_merges = self.vocab_size - 256
 
-        # split & preprocess text according to regex pattern
+        print("INFO: Pre-tokenizing text...")
         text_chunks = re.findall(self.compiled_pattern, text)
         ids = [list(ch.encode("utf-8")) for ch in text_chunks]
 
-        # iteratively merge the most common pairs to create new tokens
+        print("INFO: Calculating initial pair statistics...")
+        stats = self._get_initial_stats(ids)
+
         merges = {}
         vocab = {idx: bytes([idx]) for idx in range(256)}
+        
         for i in range(num_merges):
-            stats = {}
-            for chunk_ids in ids:
-                stats = self._get_stats(chunk_ids, stats)
-
             if not stats:
                 print(f"INFO: No more pairs to merge after {i} merges. Stopping early.")
                 break
-
+            
             pair = max(stats, key=stats.get)
+            
+            if verbose:
+                print(f"merge {i+1}/{num_merges}: {pair} -> {256 + i} ({vocab.get(pair[0], b'') + vocab.get(pair[1], b'')}) had {stats[pair]} occurrences")
+
             idx = 256 + i
-            ids = [self._merge(chunk_ids, pair, idx) for chunk_ids in ids]
+            ids = self._merge_and_update_stats(ids, pair, idx, stats)
 
             merges[pair] = idx
-            vocab[idx] = vocab[pair[0]] + vocab[pair[1]]
-
-            if verbose:
-                print(f"merge {i+1}/{num_merges}: {pair} -> {idx} ({vocab[idx]}) had {stats[pair]} occurrences")
+            vocab[idx] = vocab.get(pair[0], b'') + vocab.get(pair[1], b'')
 
         self.vocab = vocab
         self.merges = merges
+
+    def _get_initial_stats(self, ids_list: list[list[int]]) -> dict:
+        """Calculate pair counts for the entire corpus once."""
+        counts = {}
+        for ids in ids_list:
+            for pair in zip(ids, ids[1:]):
+                counts[pair] = counts.get(pair, 0) + 1
+        return counts
+
+    # more complex merge-and-update method for training optimization
+    def _merge_and_update_stats(self, ids_list: list[list[int]], pair_to_merge: tuple, new_idx: int, stats: dict) -> list[list[int]]:
+        new_ids_list = []
+        
+        stats.pop(pair_to_merge)
+
+        for ids in ids_list:
+            i = 0
+            new_ids = []
+            while i < len(ids):
+                if i < len(ids) - 1 and (ids[i], ids[i+1]) == pair_to_merge:
+                    # decrement the count of the pair that is being destroyed on the left
+                    if i > 0:
+                        left_pair = (ids[i-1], pair_to_merge[0])
+                        stats[left_pair] = stats.get(left_pair, 0) - 1
+                    
+                    # decrement the count of the pair that is being destroyed on the right
+                    if i < len(ids) - 2:
+                        right_pair = (pair_to_merge[1], ids[i+2])
+                        stats[right_pair] = stats.get(right_pair, 0) - 1
+                        
+                    new_ids.append(new_idx)
+                    i += 2
+                else:
+                    new_ids.append(ids[i])
+                    i += 1
+
+            # increment counts of newly created pairs
+            for j in range(len(new_ids) - 1):
+                current_pair = (new_ids[j], new_ids[j+1])
+
+                if new_idx in current_pair:
+                    stats[current_pair] = stats.get(current_pair, 0) + 1
+            
+            new_ids_list.append(new_ids)
+            
+        return new_ids_list
 
     def get_vocab_size(self) -> int:
         return len(self.vocab)
