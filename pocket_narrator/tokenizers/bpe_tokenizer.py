@@ -7,6 +7,7 @@ import os
 import regex as re
 import unicodedata
 import json
+from tqdm import tqdm
 from .base_tokenizer import AbstractTokenizer
 
 GPT2_SPLIT_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -47,7 +48,7 @@ class BPETokenizer(AbstractTokenizer):
         merges = {}
         vocab = {idx: bytes([idx]) for idx in range(256)}
         
-        for i in range(num_merges):
+        for i in tqdm(range(num_merges), desc="Training BPE", unit="merge"):
             if not stats:
                 print(f"INFO: No more pairs to merge after {i} merges. Stopping early.")
                 break
