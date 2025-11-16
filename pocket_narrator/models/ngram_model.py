@@ -5,6 +5,7 @@ import os
 import json
 import random
 from collections import defaultdict, Counter
+from tqdm import tqdm
 from .base_model import AbstractLanguageModel
 
 class NGramModel(AbstractLanguageModel):
@@ -31,7 +32,8 @@ class NGramModel(AbstractLanguageModel):
         Trains the n-gram model by counting sequence occurrences in the corpus.
         """
         print(f"INFO: Training {self.n}-gram model...")
-        for sequence in train_tokens:
+        total_sequences = len(train_tokens)
+        for sequence in tqdm(train_tokens, desc="Building n-gram counts", unit="sequence"):
             if len(sequence) < self.n:
                 continue
             for i in range(len(sequence) - self.n + 1):

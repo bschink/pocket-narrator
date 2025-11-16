@@ -8,16 +8,20 @@ into a functional end-to-end pipeline.
 
 PYTHONPATH=. python3 scripts/train.py \
   --generation_strategy sample \
+  --tokenizer_type character \
+  --tokenizer_path tokenizers/character_tokenizer_vocab.json \
   --no_repeat_ngram_size 3 \
   --data data/processed/TinyStories/TinyStories-train.bos_eos_30k.txt
 
   
   PYTHONPATH=. python3 scripts/train.py \
-  --data data/processed/TinyStories/TinyStories-train.bos_eos_30k.txt \
+  --data data/processed/TinyStories/TinyStoriesV2-GPT4-train.bos_eos.txt \
   --generation_strategy sample \
   --no_repeat_ngram_size 3 \
   --model_dir models/cool_models \
-  --model_name ngram_tinystories_30.model
+  --model_name new_ngram_allgpt4_tinystories.model \
+  --tokenizer_type character \
+  --tokenizer_path tokenizers/new_char_tokenizer 
 
 
 """
@@ -78,7 +82,7 @@ def main():
         help=f"Path to training dataset (default: {DATA_PATH})",
     )
     parser.add_argument("--tokenizer_type", type=str, default="bpe", help="Type of tokenizer to use ('character', 'bpe').")
-    parser.add_argument("--tokenizer_path", type=str, default="tokenizers/bpe_tokenizer/", help="Path to save/load tokenizer.")
+    parser.add_argument("--tokenizer_path", type=str, default=None, help="Path to save/load tokenizer. If not provided, defaults to tokenizer-type-specific path.")
     parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024, "special_tokens": {"<bos>": 1025, "<eos>": 1026}}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
     parser.add_argument(
         "--generation_strategy",

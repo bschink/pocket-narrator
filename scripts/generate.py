@@ -14,7 +14,9 @@ How to Use:
     --prompt "the tree is" \
     --model_path models/ngram_all_tinystories.model \
     --generation_strategy sample \
-    --no_repeat_ngram_size 3
+    --no_repeat_ngram_size 3 \
+    --tokenizer_type character \
+    --tokenizer_path tokenizers/better_character_tokenizer
 
   - To see all options:
     python scripts/generate.py --help
@@ -48,8 +50,8 @@ def main():
     parser.add_argument(
         "--tokenizer_path",
         type=str,
-        default="tokenizers/character_tokenizer_vocab.json",
-        help="The path to the saved tokenizer vocabulary file."
+        default=None,
+        help="Path to the saved tokenizer. If not provided, defaults to tokenizer-type-specific path."
     )
     parser.add_argument(
         "--generation_strategy",
@@ -63,6 +65,13 @@ def main():
         type=int,
         default=None,
         help="If set (e.g. 3), avoid repeating n-grams of this size.",
+    )
+    parser.add_argument(
+        "--tokenizer_type",
+        type=str,
+        choices=["character", "bpe"],
+        default="character",
+        help="Type of tokenizer to use ('character' or 'bpe')."
     )
 
     args = parser.parse_args()
@@ -81,12 +90,12 @@ def main():
     # --- load the tokenizer ---
     try:
         tokenizer = get_tokenizer(
-            tokenizer_type="character",
+            tokenizer_type=args.tokenizer_type,
             tokenizer_path=args.tokenizer_path
         )
     except (FileNotFoundError, ValueError) as e:
         print(f"Error loading tokenizer: {e}")
-        print(f"Please ensure a valid tokenizer exists at '{args.tokenizer_path}'. You can create one by running:")
+        print(f"Please ensure a valid tokenizer exists. You can create one by running:")
         print("  python scripts/train.py")
         return
     

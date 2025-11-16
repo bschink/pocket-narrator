@@ -25,7 +25,8 @@ class CharacterTokenizer(AbstractTokenizer):
         self.vocabulary = self.special_tokens + unique_chars
         self.char_to_idx = {char: idx for idx, char in enumerate(self.vocabulary)}
         self.idx_to_char = {idx: char for idx, char in enumerate(self.vocabulary)}
-        self.unk_token_id = self.char_to_idx['<unk>']
+        # Set unk_token_id if <unk> exists in vocabulary, otherwise use 0
+        self.unk_token_id = self.char_to_idx.get('<unk>', 0)
         print(f"INFO: Vocabulary built. Size: {self.get_vocab_size()} tokens.")
 
     def save(self, save_path: str):
