@@ -4,14 +4,14 @@ for creating, loading, and interacting with all model architectures.
 """
 import os
 import json
-import torch
+# import torch (moved downstairs)
 
 from .base_model import AbstractLanguageModel
 from .ngram_model import NGramModel
-from .transformers.model import TransformerModel 
-from .components.positional_encoding import SinusoidalPositionalEncoding
-from .transformers.attention import MultiHeadSelfAttention
-from .transformers.transformer_block import TransformerBlock
+# from .transformers.model import TransformerModel 
+# from .components.positional_encoding import SinusoidalPositionalEncoding
+# from .transformers.attention import MultiHeadSelfAttention
+# from .transformers.transformer_block import TransformerBlock
 
 def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageModel:
     """
@@ -25,6 +25,11 @@ def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageMod
             eos_token_id=kwargs.get('eos_token_id')
         )
     elif model_type == "transformer":
+        import torch
+        from .transformers.model import TransformerModel 
+        from .components.positional_encoding import SinusoidalPositionalEncoding
+        from .transformers.attention import MultiHeadSelfAttention
+        from .transformers.transformer_block import TransformerBlock
         d_model = kwargs.get('d_model', 256)
         max_len = kwargs.get('max_len', 128)
         dropout = kwargs.get('dropout', 0.1)
@@ -67,9 +72,9 @@ def load_model(model_path: str) -> AbstractLanguageModel:
         raise FileNotFoundError(f"No model file found at {model_path}")
 
     # detect file type
-    if model_path.endswith(".json"):
-        # ngram model
-        print("INFO: Detected JSON model file. Using n-gram loading logic.")
+    if model_path.endswith(".json") or model_path.endswith(".model"):
+        # ngram model (supports both .json and .model extensions)
+        print("INFO: Detected JSON/model file. Using n-gram loading logic.")
         with open(model_path, 'r', encoding='utf-8') as f:
             saved_data = json.load(f)
         config = saved_data.get("config", {})
@@ -105,4 +110,4 @@ def load_model(model_path: str) -> AbstractLanguageModel:
         return model
         
     else:
-        raise ValueError(f"Unknown model file extension for {model_path}. Must be .json or .pth")
+        raise ValueError(f"Unknown model file extension for {model_path}. Must be .json, .model, or .pth")
