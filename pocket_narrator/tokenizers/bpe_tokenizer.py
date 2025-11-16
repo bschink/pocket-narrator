@@ -1,12 +1,13 @@
 """
 Contains the implementation of a Byte-Pair Encoding (BPE) tokenizer with Regex that learns
 its vocabulary from a training corpus.
-The implementation is close to the GPT-2/GPT-4 tokenizers and https://github.com/karpathy/minbpe
+The implementation is close to the GPT-2/GPT-4 tokenizers and https://github.com/karpathy/minbpe 
+but then optimized in terms of compute and memory usage during training.
 """
 import os
 import regex as re
 import unicodedata
-import json
+from typing import Iterator
 from tqdm import tqdm
 from .base_tokenizer import AbstractTokenizer
 
@@ -34,52 +35,60 @@ class BPETokenizer(AbstractTokenizer):
         self.register_special_tokens(special_tokens)
         self.vocab = self._build_vocab() # int -> bytes
 
-    def train(self, corpus: list[str], verbose: bool = False):
-        text = "".join(corpus)
+    def train(self, corpus_iterator: Iterator[list[str]], verbose: bool = False):
+        """
+        Trains the BPE tokenizer from an iterator over a corpus
+        """
         num_merges = self.vocab_size - 256
 
-        print("INFO: Pre-tokenizing text...")
-        text_chunks = re.findall(self.compiled_pattern, text)
-        ids = [list(ch.encode("utf-8")) for ch in text_chunks]
+        print("INFO: (Phase 1/2) Building initial pair statistics from corpus stream...")
+        stats = {}
 
-        print("INFO: Calculating initial pair statistics...")
-        stats = self._get_initial_stats(ids)
+        # build full ids list
+        all_ids = []
+        for batch in tqdm(corpus_iterator, desc="Processing corpus"):
+            for text in batch:
+                text_chunks = re.findall(self.compiled_pattern, text)
+                chunk_ids = [list(ch.encode("utf-8")) for ch in text_chunks]
+                self._accumulate_stats(chunk_ids, stats)
+                all_ids.extend(chunk_ids)
 
+        # perform merges
+        print("INFO: (Phase 2/2) Performing BPE merges...")
         merges = {}
         vocab = {idx: bytes([idx]) for idx in range(256)}
         
-        for i in tqdm(range(num_merges), desc="Training BPE", unit="merge"):
+        for i in tqdm(range(num_merges), desc="Merging pairs", unit="merge"):
             if not stats:
                 print(f"INFO: No more pairs to merge after {i} merges. Stopping early.")
                 break
-            
+
             pair = max(stats, key=stats.get)
-            
+
             if verbose:
                 print(f"merge {i+1}/{num_merges}: {pair} -> {256 + i} ({vocab.get(pair[0], b'') + vocab.get(pair[1], b'')}) had {stats[pair]} occurrences")
 
             idx = 256 + i
-            ids = self._merge_and_update_stats(ids, pair, idx, stats)
+            all_ids = self._merge_and_update_stats(all_ids, pair, idx, stats)
 
             merges[pair] = idx
             vocab[idx] = vocab.get(pair[0], b'') + vocab.get(pair[1], b'')
-
-        self.vocab = vocab
+        
         self.merges = merges
+        self.vocab = self._build_vocab()
+        self.vocab.update(vocab)
 
-    def _get_initial_stats(self, ids_list: list[list[int]]) -> dict:
-        """Calculate pair counts for the entire corpus once."""
-        counts = {}
+    def _accumulate_stats(self, ids_list: list[list[int]], stats: dict) -> None:
+        """Helper to accumulate pair counts into an existing stats dictionary."""
         for ids in ids_list:
             for pair in zip(ids, ids[1:]):
-                counts[pair] = counts.get(pair, 0) + 1
-        return counts
+                stats[pair] = stats.get(pair, 0) + 1
 
     # more complex merge-and-update method for training optimization
     def _merge_and_update_stats(self, ids_list: list[list[int]], pair_to_merge: tuple, new_idx: int, stats: dict) -> list[list[int]]:
         new_ids_list = []
         
-        stats.pop(pair_to_merge)
+        stats.pop(pair_to_merge, None)
 
         for ids in ids_list:
             i = 0
@@ -89,12 +98,12 @@ class BPETokenizer(AbstractTokenizer):
                     # decrement the count of the pair that is being destroyed on the left
                     if i > 0:
                         left_pair = (ids[i-1], pair_to_merge[0])
-                        stats[left_pair] = stats.get(left_pair, 0) - 1
+                        if left_pair in stats: stats[left_pair] -= 1
                     
                     # decrement the count of the pair that is being destroyed on the right
                     if i < len(ids) - 2:
                         right_pair = (pair_to_merge[1], ids[i+2])
-                        stats[right_pair] = stats.get(right_pair, 0) - 1
+                        if right_pair in stats: stats[right_pair] -= 1
                         
                     new_ids.append(new_idx)
                     i += 2

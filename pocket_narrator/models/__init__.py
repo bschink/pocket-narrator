@@ -92,6 +92,7 @@ def load_model(model_path: str) -> AbstractLanguageModel:
         # neural model
         print("INFO: Detected PyTorch .pth model file. Using neural model loading logic.")
         
+        import torch
         save_dict = torch.load(model_path)
         config = save_dict['config']
         state_dict = save_dict['state_dict']

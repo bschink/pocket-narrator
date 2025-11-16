@@ -31,8 +31,8 @@ def test_get_model_factory_for_ngram():
 
 def test_get_model_factory_failure_for_unknown_type():
     """Tests that the get_model factory raises a ValueError for an unknown type."""
-    with pytest.raises(ValueError, match="Unknown model type: 'transformer'"):
-        get_model(model_type="transformer", vocab_size=50)
+    with pytest.raises(ValueError, match="Unknown model type: 'unknown_model'"):
+        get_model(model_type="unknown_model", vocab_size=50)
 
 def test_load_model_file_not_found():
     """Tests that load_model raises FileNotFoundError for a non-existent path."""

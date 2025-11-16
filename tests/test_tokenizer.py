@@ -24,7 +24,7 @@ def test_character_train_method_builds_vocab_correctly():
     assert tokenizer.get_vocab_size() == len(DEFAULT_SPECIAL_TOKENS) + len(unique_chars)
     assert tokenizer.unk_token_id == 1
 
-def test_untrained_tokenizer_raises_runtime_error():
+def test_character_untrained_tokenizer_raises_runtime_error():
     tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
     with pytest.raises(RuntimeError, match="Tokenizer has not been trained"):
         tokenizer.encode("hello")
@@ -40,10 +40,11 @@ def test_character_save_and_load_roundtrip(tmp_path):
     loaded_tokenizer = CharacterTokenizer.load(save_dir)
     assert loaded_tokenizer.vocabulary == original_tokenizer.vocabulary
     assert loaded_tokenizer.char_to_idx == original_tokenizer.char_to_idx
+    assert loaded_tokenizer.special_tokens == list(DEFAULT_SPECIAL_TOKENS.keys())
     text = "a test"
     assert loaded_tokenizer.decode(loaded_tokenizer.encode(text)) == text
 
-def test_encode_decode_after_training_with_unknowns():
+def test_character_encode_decode_after_training_with_unknowns():
     tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
     tokenizer.train(["abc"])
     text_with_unknowns = "ad"
@@ -68,9 +69,9 @@ def test_bpe_initialization_fails_with_small_vocab():
         BPETokenizer(vocab_size=100, special_tokens=DEFAULT_SPECIAL_TOKENS)
 
 def test_bpe_train_creates_merges():
-    corpus = ["aaaaa"]
+    corpus_iterator = iter([["aaaaa"]])
     tokenizer = BPETokenizer(vocab_size=257, special_tokens={})
-    tokenizer.train(corpus)
+    tokenizer.train(corpus_iterator)
     assert tokenizer.get_vocab_size() == 257
     most_frequent_pair = (97, 97)
     assert len(tokenizer.merges) == 1
@@ -78,18 +79,18 @@ def test_bpe_train_creates_merges():
     assert tokenizer.merges[most_frequent_pair] == 256
 
 def test_bpe_encode_decode_roundtrip():
-    corpus = ["a simple sentence for testing"]
+    corpus_iterator = iter([["a simple sentence for testing"]])
     tokenizer = BPETokenizer(vocab_size=300, special_tokens={})
-    tokenizer.train(corpus)
+    tokenizer.train(corpus_iterator)
     text = "this is a test sentence"
     encoded = tokenizer.encode(text)
     decoded = tokenizer.decode(encoded)
     assert decoded == text
 
 def test_bpe_save_and_load_roundtrip(tmp_path):
-    corpus = ["a simple sentence for testing the save and load functionality"]
+    corpus_iterator = iter([["a simple sentence for testing the save and load functionality"]])
     original_tokenizer = BPETokenizer(vocab_size=300, special_tokens=DEFAULT_SPECIAL_TOKENS)
-    original_tokenizer.train(corpus)
+    original_tokenizer.train(corpus_iterator)
     save_dir = tmp_path / "bpe_tokenizer"
     original_tokenizer.save(save_dir)
     loaded_tokenizer = BPETokenizer.load(save_dir)
@@ -100,11 +101,11 @@ def test_bpe_save_and_load_roundtrip(tmp_path):
     assert loaded_tokenizer.decode(loaded_tokenizer.encode(text)) == text
 
 def test_bpe_special_tokens_handling():
-    corpus = ["some text"]
+    corpus_iterator = iter([["some text"]])
     special_token = "<|endoftext|>"
     special_tokens = {special_token: 300}
-    tokenizer = BPETokenizer(vocab_size=300, special_tokens=special_tokens)
-    tokenizer.train(corpus)
+    tokenizer = BPETokenizer(vocab_size=301, special_tokens=special_tokens)
+    tokenizer.train(corpus_iterator)
     text_with_special = f"some text {special_token}"
     with pytest.raises(AssertionError):
         tokenizer.encode(text_with_special)
@@ -115,52 +116,41 @@ def test_bpe_special_tokens_handling():
 
 # --- Tests for the get_tokenizer Factory Function ---
 
-def test_get_tokenizer_loads_existing_file(tmp_path):
-    corpus1 = ["hello"]
-    corpus2 = ["world"]
+def test_get_tokenizer_loads_existing(tmp_path):
+    corpus = ["hello"]
     tokenizer_dir = tmp_path / "char_tokenizer_for_loading"
     initial_tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
-    initial_tokenizer.train(corpus1)
+    initial_tokenizer.train(corpus)
     initial_tokenizer.save(tokenizer_dir)
     loaded_tokenizer = get_tokenizer(
         tokenizer_type="character",
         tokenizer_path=tokenizer_dir,
-        train_corpus=corpus2
     )
-    assert isinstance(loaded_tokenizer, AbstractTokenizer)
+    assert isinstance(loaded_tokenizer, CharacterTokenizer)
     assert loaded_tokenizer.get_vocab_size() == len(DEFAULT_SPECIAL_TOKENS) + 4
 
-def test_get_tokenizer_trains_and_saves_if_nonexistent(tmp_path):
-    corpus = ["new tokenizer"]
-    tokenizer_dir = tmp_path / "char_tokenizer_for_saving"
+def test_get_tokenizer_instantiates_new_if_nonexistent(tmp_path):
+    tokenizer_dir = tmp_path / "new_tokenizer"
     tokenizer_config = {"special_tokens": DEFAULT_SPECIAL_TOKENS}
     tokenizer = get_tokenizer(
         tokenizer_type="character",
         tokenizer_path=tokenizer_dir,
-        train_corpus=corpus,
         **tokenizer_config
     )
     assert isinstance(tokenizer, CharacterTokenizer)
-    assert tokenizer.get_vocab_size() > len(DEFAULT_SPECIAL_TOKENS)
-    assert os.path.exists(os.path.join(tokenizer_dir, "vocab.json"))
+    assert tokenizer.get_vocab_size() == 0
 
-def test_get_tokenizer_handles_bpe_type(tmp_path):
+def test_get_tokenizer_passes_kwargs_to_bpe(tmp_path):
     tokenizer_config = {"vocab_size": 260, "special_tokens": DEFAULT_SPECIAL_TOKENS}
     tokenizer_dir = tmp_path / "bpe_tokenizer"
     tokenizer = get_tokenizer(
         tokenizer_type="bpe",
-        train_corpus=["abc"],
         tokenizer_path=tokenizer_dir,
         **tokenizer_config
     )
     assert isinstance(tokenizer, BPETokenizer)
-    assert tokenizer.vocab_size >= 260
-    assert os.path.exists(os.path.join(tokenizer_dir, "bpe.model"))
+    assert tokenizer.vocab_size == 260
 
 def test_get_tokenizer_raises_error_for_unknown_type():
     with pytest.raises(ValueError, match="Unknown tokenizer type"):
-        get_tokenizer(tokenizer_type="some_future_tokenizer", train_corpus=["abc"])
-
-def test_get_tokenizer_raises_error_when_no_path_or_corpus():
-    with pytest.raises(ValueError, match="Must provide either a valid tokenizer_path or a train_corpus"):
-        get_tokenizer(tokenizer_type="character")
+        get_tokenizer(tokenizer_type="some_future_tokenizer")

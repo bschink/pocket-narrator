@@ -122,33 +122,44 @@ def main():
 
     # --- Initialization ---
     print("Initializing tokenizer and model...")
+    tokenizer_path = args.tokenizer_path
+    if tokenizer_path is None:
+        tokenizer_path = f"tokenizers/{args.tokenizer_type}_tokenizer/"
     tokenizer = get_tokenizer(
-        tokenizer_type=args.tokenizer_type, 
-        tokenizer_path=args.tokenizer_path,
-        train_corpus=train_lines,
+        tokenizer_type=args.tokenizer_type,
+        tokenizer_path=tokenizer_path,
         **args.tokenizer_config
     )
 
-    model_specific_config = MODEL_CONFIG.copy()
+    is_untrained = tokenizer.get_vocab_size() <= (256 + len(args.tokenizer_config.get("special_tokens", {})))
+    if is_untrained and not os.path.exists(tokenizer_path):
+        print(f"INFO: Tokenizer is untrained. Preparing training data...")
+        if args.tokenizer_type == "bpe":
+            # bpe tokenizer needs an iterator
+            corpus_data = batchify_text(train_lines, batch_size=1000, shuffle=False)
+        else: # assumes CharacterTokenizer or similar
+            # can take the full list.
+            corpus_data = train_lines
+            
+        tokenizer.train(corpus_data)
+        tokenizer.save(tokenizer_path)
+    else:
+        print("INFO: Using pre-existing/loaded tokenizer.")
+
+    model_config = MODEL_CONFIG.copy()
     
     # Get EOS token ID based on tokenizer type
-    if hasattr(tokenizer, 'char_to_idx'):
-        # Character tokenizer
-        model_specific_config['eos_token_id'] = tokenizer.char_to_idx['<eos>']
-    elif hasattr(tokenizer, 'special_tokens') and '<eos>' in tokenizer.special_tokens:
-        # BPE tokenizer with registered special tokens
-        model_specific_config['eos_token_id'] = tokenizer.special_tokens['<eos>']
+    if hasattr(tokenizer, 'special_tokens') and '<eos>' in tokenizer.special_tokens:
+        model_config['eos_token_id'] = tokenizer.special_tokens['<eos>']
     else:
-        # No EOS token found, use None or vocab_size - 1 as fallback
-        print("WARNING: No <eos> token found in tokenizer. Using None for eos_token_id.")
-        model_specific_config['eos_token_id'] = None
+        print("WARNING: No <eos> token found in tokenizer.")
+        model_config['eos_token_id'] = None
     
     model = get_model(
         model_type=MODEL_TYPE,
         vocab_size=tokenizer.get_vocab_size(),
-        **model_specific_config
+        **model_config
     )
-
     trainer = get_trainer(trainer_type=TRAINER_TYPE)
 
     # --- Training ---
@@ -222,7 +233,7 @@ def main():
         "data_path": args.data,
         "generation_strategy": args.generation_strategy,
         "no_repeat_ngram_size": args.no_repeat_ngram_size,
-        "model_config": model_specific_config,
+        "model_config": model_config,
         "val_ratio": VAL_RATIO,
         "batch_size": BATCH_SIZE,
     }

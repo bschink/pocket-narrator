@@ -64,14 +64,14 @@ class CharacterTokenizer(AbstractTokenizer):
         with open(file_path, 'r', encoding='utf-8') as f:
             vocabulary = json.load(f)
         
-        special_tokens = {}
-        for idx, char in enumerate(vocabulary):
-            if char.startswith('<') and char.endswith('>'):
-                special_tokens[char] = idx
+        special_tokens_dict = {}
+        for token in vocabulary:
+            if token.startswith('<') and token.endswith('>'):
+                special_tokens_dict[token] = vocabulary.index(token)
         
-        tokenizer = cls(special_tokens=special_tokens)
-        tokenizer.vocabulary = vocabulary
+        tokenizer = cls(special_tokens=special_tokens_dict)
             
+        tokenizer.vocabulary = vocabulary
         tokenizer.char_to_idx = {char: idx for idx, char in enumerate(tokenizer.vocabulary)}
         tokenizer.idx_to_char = {idx: char for idx, char in enumerate(tokenizer.vocabulary)}
         tokenizer.unk_token_id = tokenizer.char_to_idx.get('<unk>')
