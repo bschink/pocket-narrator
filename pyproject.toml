@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pocket-narrator"
+version = "0.1.0"
+description = "A pocket-sized story narrator using language models"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "torch",
+    "numpy",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pocket_narrator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v"

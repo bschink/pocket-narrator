@@ -1,13 +1,13 @@
 # requirements.txt
-pytest
-
-# for fetching datasets from Hugging Face Hub
-huggingface_hub>=0.24
 
 # Core utilities
 numpy>=1.26
 pandas>=2.2
 matplotlib
+torch>=2.0
+
+# for fetching datasets from Hugging Face Hub
+huggingface_hub>=0.24
 
 # Notebook environment
 jupyter>=1.0
@@ -18,3 +18,7 @@ tqdm>=4.66
 
 # regular expressions
 regex
+
+# tests
+pytest
+pytest-mock

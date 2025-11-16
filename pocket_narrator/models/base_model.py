@@ -8,10 +8,6 @@ class AbstractLanguageModel(ABC):
         self.vocab_size = vocab_size
         super().__init__()
     
-    def train(self, train_tokens: list[list[int]]):
-        """Train the model on a tokenized corpus."""
-        pass
-
     @abstractmethod
     def predict_sequence_batch(self, input_tokens_batch: list[list[int]]) -> list[list[int]]:
         pass
