@@ -124,17 +124,17 @@ def run_evaluation(
     print("--- Running Full Evaluation ---")
 
     
-    # Providing all the evaluation metrics in here
+    # Providing all the evaluation metrics in here:
     evaluation_results = {}
     
-    # MVP Accuracy
+    # --- 1. MVP Accuracy
     evaluation_results["mvp_accuracy"] = _calculate_mvp_accuracy_on_batch(predicted_tokens, target_tokens)
 
-    # Distinct-n for n=1,2,3
+    # --- 2. Distinct-n for n=1,2,3
     for n in (1, 2, 3):
         evaluation_results[f"distinct_{n}"] = distinct_n(predicted_text, n=n)
     
-    # Repetition rate over generated text
+    # --- 3. Repetition rate over generated text
     evaluation_results["repetition_rate"] = repetition_rate(predicted_text)
     
     return evaluation_results
