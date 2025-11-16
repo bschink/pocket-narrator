@@ -80,7 +80,7 @@ class BPETokenizer(AbstractTokenizer):
         self.inverse_special_tokens = {v: k for k, v in special_tokens.items()}
 
     def encode(self, text: str) -> list[int]:
-        return self._encode_internal(text, allowed_special="none_raise")
+        return self._encode_internal(text, allowed_special="all")
 
     def _encode_internal(self, text, allowed_special="none_raise"):
         special = None
