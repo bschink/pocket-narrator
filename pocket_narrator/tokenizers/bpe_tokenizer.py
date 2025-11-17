@@ -46,14 +46,14 @@ class BPETokenizer(AbstractTokenizer):
         self.inverse_special_tokens = {}
         self.pattern = pattern or GPT4_SPLIT_PATTERN
         self.compiled_pattern = re.compile(self.pattern)
-        self.register_special_tokens(special_tokens)
+        self.special_token_names = list(special_tokens.keys()) if isinstance(special_tokens, dict) else special_tokens
         self.vocab = self._build_vocab()
 
     def train(self, corpus: List[str]):
         """
         Trains the tokenizer using an iterative, parallelized re-scanning approach.
         """
-        num_merges_total = self.vocab_size - (256 + len(self.special_tokens))
+        num_merges_total = self.vocab_size - (256 + len(self.special_token_names))
         if num_merges_total <= 0:
             return
 
@@ -85,15 +85,17 @@ class BPETokenizer(AbstractTokenizer):
                 self.merges[pair] = idx
                 stats.pop(pair)
         
+        # assign special tokens
+        self.special_tokens = {}
+        for i, token_name in enumerate(self.special_token_names):
+            self.special_tokens[token_name] = 256 + len(self.merges) + i
+        self.inverse_special_tokens = {v: k for k, v in self.special_tokens.items()}
+        
         self.vocab = self._build_vocab()
         print("\nBPE training complete.")
         
     def get_vocab_size(self) -> int:
         return len(self.vocab)
-
-    def register_special_tokens(self, special_tokens):
-        self.special_tokens = special_tokens
-        self.inverse_special_tokens = {v: k for k, v in special_tokens.items()}
 
     def encode(self, text: str) -> list[int]:
         return self._encode_internal(text, allowed_special="all")
@@ -228,8 +230,10 @@ class BPETokenizer(AbstractTokenizer):
         
         # vocab size will be determined by the loaded merges and special tokens
         vocab_size = 256 + len(merges) + len(special_tokens)
-        tokenizer = cls(vocab_size=vocab_size, special_tokens=special_tokens, pattern=pattern)
+        tokenizer = cls(vocab_size=vocab_size, special_tokens=list(special_tokens.keys()), pattern=pattern)
         tokenizer.merges = merges
+        tokenizer.special_tokens = special_tokens
+        tokenizer.inverse_special_tokens = {v: k for k, v in special_tokens.items()}
         tokenizer.vocab = tokenizer._build_vocab()
         
         return tokenizer
