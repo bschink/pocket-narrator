@@ -9,12 +9,28 @@ import unicodedata
 import json
 from typing import List, Iterator
 from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
+from collections import Counter
+from functools import partial
+
 from .base_tokenizer import AbstractTokenizer
 from ..data_loader import batchify_text
 
 GPT2_SPLIT_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r{
 \n}]*|\s*[\r\n]|\s+(?!\S)|\s+"""
+
+def _count_pairs_in_batch(batch: List[str], pattern: str) -> Counter:
+    """A worker function that counts pairs in a single batch of text."""
+    stats = Counter()
+    compiled_pattern = re.compile(pattern)
+    for text in batch:
+        text_chunks = re.findall(compiled_pattern, text)
+        for chunk in text_chunks:
+            ids = list(chunk.encode("utf-8"))
+            for pair in zip(ids, ids[1:]):
+                stats[pair] += 1
+    return stats
 
 class BPETokenizer(AbstractTokenizer):
     """A BPE tokenizer that learns its vocabulary from a training data stream."""
@@ -35,29 +51,29 @@ class BPETokenizer(AbstractTokenizer):
 
     def train(self, corpus: List[str]):
         """
-        Trains the tokenizer using an iterative re-scanning approach.
-        This method is memory-safe as it creates fresh iterators for each pass.
+        Trains the tokenizer using an iterative, parallelized re-scanning approach.
         """
         num_merges_total = self.vocab_size - (256 + len(self.special_tokens))
         if num_merges_total <= 0:
             return
 
         num_rounds = (num_merges_total + self.merges_per_round - 1) // self.merges_per_round
+        self.merges = {}
 
         for round_num in range(num_rounds):
             print(f"\n--- BPE Training Round {round_num + 1}/{num_rounds} ---")
             
             # scan with current merges, create fresh iterator
-            corpus_iterator = batchify_text(corpus, batch_size=1000, shuffle=False)
-            stats = {}
+            corpus_iterator = batchify_text(corpus, batch_size=5000, shuffle=False)
+            num_workers = max(1, cpu_count() - 1)
+            stats = Counter()
+
+            worker_func = partial(_count_pairs_in_batch, pattern=self.pattern)
             
-            for batch in tqdm(corpus_iterator, desc=f"Round {round_num+1} Scan"):
-                for text in batch:
-                    text_chunks = re.findall(self.compiled_pattern, text)
-                    for chunk in text_chunks:
-                        chunk_ids = self._encode_chunk(chunk.encode("utf-8"))
-                        for pair in zip(chunk_ids, chunk_ids[1:]):
-                            stats[pair] = stats.get(pair, 0) + 1
+            with Pool(processes=num_workers) as pool:
+                pbar = tqdm(pool.imap_unordered(worker_func, corpus_iterator), desc=f"Round {round_num+1} Scan")
+                for batch_stats in pbar:
+                    stats.update(batch_stats)
             
             # merge next batch of top pairs
             merges_this_round = min(self.merges_per_round, num_merges_total - len(self.merges))
