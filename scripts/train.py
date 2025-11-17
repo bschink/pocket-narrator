@@ -83,7 +83,7 @@ def main():
     )
     parser.add_argument("--tokenizer_type", type=str, default="bpe", help="Type of tokenizer to use ('character', 'bpe').")
     parser.add_argument("--tokenizer_path", type=str, default=None, help="Path to save/load tokenizer. If not provided, defaults to tokenizer-type-specific path.")
-    parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024, "special_tokens": {"<bos>": 1025, "<eos>": 1026}}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
+    parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024, "special_tokens": {"<bos>": 1023, "<eos>": 1024}, "merges_per_round": 200}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
     parser.add_argument(
         "--generation_strategy",
         type=str,
@@ -134,14 +134,7 @@ def main():
     is_untrained = tokenizer.get_vocab_size() <= (256 + len(args.tokenizer_config.get("special_tokens", {})))
     if is_untrained and not os.path.exists(tokenizer_path):
         print(f"INFO: Tokenizer is untrained. Preparing training data...")
-        if args.tokenizer_type == "bpe":
-            # bpe tokenizer needs an iterator
-            corpus_data = batchify_text(train_lines, batch_size=1000, shuffle=False)
-        else: # assumes CharacterTokenizer or similar
-            # can take the full list.
-            corpus_data = train_lines
-            
-        tokenizer.train(corpus_data)
+        tokenizer.train(train_lines)
         tokenizer.save(tokenizer_path)
     else:
         print("INFO: Using pre-existing/loaded tokenizer.")

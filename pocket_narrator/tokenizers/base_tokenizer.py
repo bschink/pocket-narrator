@@ -2,13 +2,14 @@
 Defines the abstract base class for all tokenizers.
 """
 from abc import ABC, abstractmethod
+from typing import List, Iterator
 
 class AbstractTokenizer(ABC):
     def __init__(self):
         super().__init__()
 
     @abstractmethod
-    def train(self, corpus: list[str]):
+    def train(self, corpus: List[str]):
         """Trains the tokenizer from a corpus of text."""
         pass
 

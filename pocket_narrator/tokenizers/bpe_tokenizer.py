@@ -7,9 +7,10 @@ import os
 import regex as re
 import unicodedata
 import json
-from typing import Iterator
+from typing import List, Iterator
 from tqdm import tqdm
 from .base_tokenizer import AbstractTokenizer
+from ..data_loader import batchify_text
 
 GPT2_SPLIT_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r{
@@ -17,60 +18,59 @@ GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1
 
 class BPETokenizer(AbstractTokenizer):
     """A BPE tokenizer that learns its vocabulary from a training data stream."""
-    
-    def __init__(self, vocab_size: int, special_tokens: dict[str, int], pattern=GPT4_SPLIT_PATTERN):
+
+    def __init__(self, vocab_size: int, special_tokens: dict, pattern: str = GPT4_SPLIT_PATTERN, merges_per_round: int = 500):
         super().__init__()
         if vocab_size < 256:
             raise ValueError("Vocab size must be at least 256 for BPE.")
         self.vocab_size = vocab_size
+        self.merges_per_round = merges_per_round
         self.merges = {}
         self.special_tokens = {}
         self.inverse_special_tokens = {}
-        self.pattern = pattern
+        self.pattern = pattern or GPT4_SPLIT_PATTERN
         self.compiled_pattern = re.compile(self.pattern)
         self.register_special_tokens(special_tokens)
         self.vocab = self._build_vocab()
 
-    def train(self, corpus_iterator: Iterator[list[str]], verbose: bool = False):
+    def train(self, corpus: List[str]):
         """
-        Trains the BPE tokenizer from an iterator over a corpus. This approach is
-        memory-efficient and suitable for large datasets.
+        Trains the tokenizer using an iterative re-scanning approach.
+        This method is memory-safe as it creates fresh iterators for each pass.
         """
-        if self.vocab_size <= 256 + len(self.special_tokens):
-            return  # Nothing to learn
-        num_merges = self.vocab_size - (256 + len(self.special_tokens))
+        num_merges_total = self.vocab_size - (256 + len(self.special_tokens))
+        if num_merges_total <= 0:
+            return
 
-        # initial stats
-        print("INFO: (Phase 1/2) Building initial pair statistics from corpus stream...")
-        stats = {}
-        for batch in tqdm(corpus_iterator, desc="Processing corpus"):
-            for text in batch:
-                text_chunks = re.findall(self.compiled_pattern, text)
-                for chunk in text_chunks:
-                    ids = list(chunk.encode("utf-8"))
-                    for pair in zip(ids, ids[1:]):
-                        stats[pair] = stats.get(pair, 0) + 1
+        num_rounds = (num_merges_total + self.merges_per_round - 1) // self.merges_per_round
 
-        # merges
-        print("INFO: (Phase 2/2) Performing BPE merges...")
-        merges = {}
-        for i in tqdm(range(num_merges), desc="Merging pairs", unit="merge"):
-            if not stats:
-                print(f"INFO: No more pairs to merge after {i} merges. Stopping early.")
-                break
+        for round_num in range(num_rounds):
+            print(f"\n--- BPE Training Round {round_num + 1}/{num_rounds} ---")
+            
+            # scan with current merges, create fresh iterator
+            corpus_iterator = batchify_text(corpus, batch_size=1000, shuffle=False)
+            stats = {}
+            
+            for batch in tqdm(corpus_iterator, desc=f"Round {round_num+1} Scan"):
+                for text in batch:
+                    text_chunks = re.findall(self.compiled_pattern, text)
+                    for chunk in text_chunks:
+                        chunk_ids = self._encode_chunk(chunk.encode("utf-8"))
+                        for pair in zip(chunk_ids, chunk_ids[1:]):
+                            stats[pair] = stats.get(pair, 0) + 1
+            
+            # merge next batch of top pairs
+            merges_this_round = min(self.merges_per_round, num_merges_total - len(self.merges))
+            for i in range(merges_this_round):
+                if not stats:
+                    break
+                pair = max(stats, key=stats.get)
+                idx = 256 + len(self.merges)
+                self.merges[pair] = idx
+                stats.pop(pair)
         
-            pair = max(stats, key=stats.get)
-            
-            # remove the merged pair and don't try to re-calculate all newly formed adjacent pairs, 
-            # as that would require another pass over the full dataset
-            stats.pop(pair)
-            
-            idx = 256 + i
-            merges[pair] = idx
-
-        self.merges = merges
-        # rebuild the vocabulary with new merges
         self.vocab = self._build_vocab()
+        print("\nBPE training complete.")
         
     def get_vocab_size(self) -> int:
         return len(self.vocab)

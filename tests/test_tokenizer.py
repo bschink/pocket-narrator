@@ -69,7 +69,7 @@ def test_bpe_initialization_fails_with_small_vocab():
         BPETokenizer(vocab_size=100, special_tokens=DEFAULT_SPECIAL_TOKENS)
 
 def test_bpe_train_creates_merges():
-    corpus_iterator = iter([["aaaaa"]])
+    corpus_iterator = ["aaaaa"]
     tokenizer = BPETokenizer(vocab_size=257, special_tokens={})
     tokenizer.train(corpus_iterator)
     assert tokenizer.get_vocab_size() == 257
@@ -79,7 +79,7 @@ def test_bpe_train_creates_merges():
     assert tokenizer.merges[most_frequent_pair] == 256
 
 def test_bpe_encode_decode_roundtrip():
-    corpus_iterator = iter([["a simple sentence for testing"]])
+    corpus_iterator = ["a simple sentence for testing"]
     tokenizer = BPETokenizer(vocab_size=300, special_tokens={})
     tokenizer.train(corpus_iterator)
     text = "this is a test sentence"
@@ -88,7 +88,7 @@ def test_bpe_encode_decode_roundtrip():
     assert decoded == text
 
 def test_bpe_save_and_load_roundtrip(tmp_path):
-    corpus_iterator = iter([["a simple sentence for testing the save and load functionality"]])
+    corpus_iterator = ["a simple sentence for testing the save and load functionality"]
     original_tokenizer = BPETokenizer(vocab_size=300, special_tokens=DEFAULT_SPECIAL_TOKENS)
     original_tokenizer.train(corpus_iterator)
     save_dir = tmp_path / "bpe_tokenizer"
@@ -101,15 +101,14 @@ def test_bpe_save_and_load_roundtrip(tmp_path):
     assert loaded_tokenizer.decode(loaded_tokenizer.encode(text)) == text
 
 def test_bpe_special_tokens_handling():
-    corpus_iterator = iter([["some text"]])
+    corpus_iterator = ["some text"]
     special_token = "<|endoftext|>"
     special_tokens = {special_token: 300}
     tokenizer = BPETokenizer(vocab_size=301, special_tokens=special_tokens)
     tokenizer.train(corpus_iterator)
     text_with_special = f"some text {special_token}"
-    with pytest.raises(AssertionError):
-        tokenizer.encode(text_with_special)
-    encoded = tokenizer._encode_internal(text_with_special, allowed_special="all")
+    # encode() allows all special tokens by default
+    encoded = tokenizer.encode(text_with_special)
     assert encoded[-1] == 300
     decoded = tokenizer.decode(encoded)
     assert decoded == text_with_special
