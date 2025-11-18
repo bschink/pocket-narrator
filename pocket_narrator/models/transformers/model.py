@@ -6,13 +6,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ..base_model import AbstractLanguageModel
-from ..components.base_pos_encoding import AbstractPositionalEncoding
-from .transformer_block import TransformerBlock
-from ..components.positional_encoding import SinusoidalPositionalEncoding
+from ..components.positional_encoding import SinusoidalPositionalEncoding, RotaryPositionalEncoding
 from .attention import MultiHeadSelfAttention
+from .transformer_block import TransformerBlock
 
 class TransformerModel(AbstractLanguageModel, nn.Module):
-    def __init__(self, vocab_size: int, pos_encoding_module, blocks: nn.ModuleList, config: dict):
+    def __init__(self, vocab_size: int, blocks: nn.ModuleList, config: dict,
+                 pos_encoding_module: AbstractLanguageModel = None):
         AbstractLanguageModel.__init__(self, vocab_size)
         nn.Module.__init__(self)
 
@@ -40,9 +40,14 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         pos_encoding_type = kwargs.get("pos_encoding_type", "sinusoidal")
         attention_type = kwargs.get("attention_type", "multi_head")
 
-        # generic components
+        # positional encodings
+        additive_pos_encoding = None
+        rotary_pos_encoding = None
         if pos_encoding_type == "sinusoidal":
-            pos_encoding_module = SinusoidalPositionalEncoding(d_model, max_len, dropout)
+            additive_pos_encoding = SinusoidalPositionalEncoding(d_model, max_len, dropout)
+        elif pos_encoding_type == "rope":
+            assert (d_model // n_head) % 2 == 0, "For RoPE, head dimension (d_model/n_head) must be even."
+            rotary_pos_encoding = RotaryPositionalEncoding(d_model // n_head, max_len)
         else:
             raise ValueError(f"Unknown pos_encoding_type: {pos_encoding_type}")
 
@@ -50,7 +55,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         blocks = nn.ModuleList()
         for _ in range(n_layers):
             if attention_type == "multi_head":
-                attention_module = MultiHeadSelfAttention(d_model, n_head, dropout)
+                attention_module = MultiHeadSelfAttention(d_model, n_head, dropout, pos_encoding_module=rotary_pos_encoding)
             else:
                 raise ValueError(f"Unknown attention_type: {attention_type}")
             
@@ -63,12 +68,14 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
             "pos_encoding_type": pos_encoding_type, "attention_type": attention_type,
         }
         
-        return cls(vocab_size, pos_encoding_module, blocks, config)
+        return cls(vocab_size, blocks, config, pos_encoding_module=additive_pos_encoding)
 
     def forward(self, idx: torch.Tensor, mask: torch.Tensor = None):
         """The forward pass of the model."""
         x = self.token_embedding(idx)
-        x = self.pos_encoding(x)
+        if self.pos_encoding is not None:
+            x = self.pos_encoding(x)
+            
         for block in self.blocks:
             x = block(x, mask=mask)
         x = self.ln_f(x)

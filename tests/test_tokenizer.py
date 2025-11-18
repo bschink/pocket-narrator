@@ -5,7 +5,7 @@ from pocket_narrator.tokenizers.base_tokenizer import AbstractTokenizer
 from pocket_narrator.tokenizers.character_tokenizer import CharacterTokenizer
 from pocket_narrator.tokenizers.bpe_tokenizer import BPETokenizer
 
-DEFAULT_SPECIAL_TOKENS = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
+DEFAULT_SPECIAL_TOKENS = ["<pad>", "<unk>", "<bos>", "<eos>"]
 
 # --- Tests for the CharacterTokenizer Class ---
 
@@ -22,7 +22,7 @@ def test_character_train_method_builds_vocab_correctly():
     tokenizer.train(corpus)
     unique_chars = sorted(list(set("".join(corpus))))
     assert tokenizer.get_vocab_size() == len(DEFAULT_SPECIAL_TOKENS) + len(unique_chars)
-    assert tokenizer.unk_token_id == 1
+    assert tokenizer.unk_token_id == tokenizer.token_to_id("<unk>")
 
 def test_character_untrained_tokenizer_raises_runtime_error():
     tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
@@ -40,7 +40,7 @@ def test_character_save_and_load_roundtrip(tmp_path):
     loaded_tokenizer = CharacterTokenizer.load(save_dir)
     assert loaded_tokenizer.vocabulary == original_tokenizer.vocabulary
     assert loaded_tokenizer.char_to_idx == original_tokenizer.char_to_idx
-    assert loaded_tokenizer.special_tokens == list(DEFAULT_SPECIAL_TOKENS.keys())
+    assert loaded_tokenizer.special_tokens == {token: loaded_tokenizer.char_to_idx[token] for token in DEFAULT_SPECIAL_TOKENS}
     text = "a test"
     assert loaded_tokenizer.decode(loaded_tokenizer.encode(text)) == text
 
@@ -60,9 +60,7 @@ def test_bpe_tokenizer_initialization():
     tokenizer = BPETokenizer(vocab_size=512, special_tokens=DEFAULT_SPECIAL_TOKENS)
     assert tokenizer.vocab_size == 512
     assert len(tokenizer.vocab) == 256
-    for special_token, idx in DEFAULT_SPECIAL_TOKENS.items():
-        assert idx in tokenizer.vocab
-        assert tokenizer.vocab[idx] == special_token.encode('utf-8')
+    assert tokenizer.special_token_names == DEFAULT_SPECIAL_TOKENS
 
 def test_bpe_initialization_fails_with_small_vocab():
     with pytest.raises(ValueError, match="Vocab size must be at least 256"):
@@ -103,13 +101,13 @@ def test_bpe_save_and_load_roundtrip(tmp_path):
 def test_bpe_special_tokens_handling():
     corpus_iterator = ["some text"]
     special_token = "<|endoftext|>"
-    special_tokens = {special_token: 300}
+    special_tokens = [special_token]
     tokenizer = BPETokenizer(vocab_size=301, special_tokens=special_tokens)
     tokenizer.train(corpus_iterator)
     text_with_special = f"some text {special_token}"
     # encode() allows all special tokens by default
     encoded = tokenizer.encode(text_with_special)
-    assert encoded[-1] == 300
+    assert tokenizer.special_tokens[special_token] in encoded
     decoded = tokenizer.decode(encoded)
     assert decoded == text_with_special
 

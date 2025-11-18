@@ -84,6 +84,7 @@ def main():
     parser.add_argument("--tokenizer_type", type=str, default="bpe", help="Type of tokenizer to use ('character', 'bpe').")
     parser.add_argument("--tokenizer_path", type=str, default=None, help="Path to save/load tokenizer. If not provided, defaults to tokenizer-type-specific path.")
     parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024, "special_tokens": ["<bos>", "<eos>"], "merges_per_round": 200}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
+    parser.add_argument("--model_type", type=str, default="ngram", help="Type of model to train ('ngram', 'transformer').")
     parser.add_argument(
         "--generation_strategy",
         type=str,
@@ -131,25 +132,23 @@ def main():
         **args.tokenizer_config
     )
 
-    is_untrained = tokenizer.get_vocab_size() <= (256 + len(args.tokenizer_config.get("special_tokens", [])))
-    if is_untrained and not os.path.exists(tokenizer_path):
-        print(f"INFO: Tokenizer is untrained. Preparing training data...")
+    if not os.path.exists(tokenizer_path):
+        print(f"INFO: Tokenizer not found at {tokenizer_path}. Training tokenizer...")
         tokenizer.train(train_lines)
         tokenizer.save(tokenizer_path)
+        print(f"INFO: Tokenizer trained and saved to {tokenizer_path}.")
     else:
         print("INFO: Using pre-existing/loaded tokenizer.")
 
-    model_config = MODEL_CONFIG.copy()
-    
-    # Get EOS token ID based on tokenizer type
-    if hasattr(tokenizer, 'special_tokens') and '<eos>' in tokenizer.special_tokens:
-        model_config['eos_token_id'] = tokenizer.special_tokens['<eos>']
-    else:
+    eos_token_id = tokenizer.token_to_id('<eos>')
+    if eos_token_id is None:
         print("WARNING: No <eos> token found in tokenizer.")
-        model_config['eos_token_id'] = None
+
+    model_config = MODEL_CONFIG.copy()
+    model_config['eos_token_id'] = eos_token_id
     
     model = get_model(
-        model_type=MODEL_TYPE,
+        model_type=args.model_type,
         vocab_size=tokenizer.get_vocab_size(),
         **model_config
     )
@@ -164,8 +163,6 @@ def main():
     print("\n--- Starting Validation ---")
     val_batch_iterator = batchify_text(val_lines, batch_size=BATCH_SIZE, shuffle=False)
     val_batch_text = next(val_batch_iterator)
-    val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
-    
     val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
 
     predicted_tokens_batch = model.predict_sequence_batch(

@@ -80,15 +80,17 @@ def test_transformer_trainer_train_method_updates_weights():
     """
     # Arrange
     train_data = ["abcde", "fghij"]
-    special_tokens = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
+    special_tokens = ["<pad>", "<unk>", "<bos>", "<eos>"]
     
     tokenizer = CharacterTokenizer(special_tokens=special_tokens)
     tokenizer.train(train_data)
     
+    eos_token_id = tokenizer.token_to_id("<eos>")
+    
     model_config = {
         "d_model": 16, "n_layers": 1, "n_head": 2, "max_len": 10, "dropout": 0.0,
         "pos_encoding_type": "sinusoidal", "attention_type": "multi_head",
-        "eos_token_id": special_tokens['<eos>']
+        "eos_token_id": eos_token_id
     }
     model = get_model(model_type="transformer", vocab_size=tokenizer.get_vocab_size(), **model_config)
     

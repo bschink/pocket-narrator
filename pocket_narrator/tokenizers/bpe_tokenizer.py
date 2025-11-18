@@ -96,6 +96,9 @@ class BPETokenizer(AbstractTokenizer):
         
     def get_vocab_size(self) -> int:
         return len(self.vocab)
+    
+    def token_to_id(self, token: str) -> int:
+        return self.special_tokens.get(token)
 
     def encode(self, text: str) -> list[int]:
         return self._encode_internal(text, allowed_special="all")

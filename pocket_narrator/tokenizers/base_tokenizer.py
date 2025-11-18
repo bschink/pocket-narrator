@@ -19,6 +19,11 @@ class AbstractTokenizer(ABC):
         pass
 
     @abstractmethod
+    def token_to_id(self, token: str) -> int:
+        """Converts a string token to its integer ID."""
+        pass
+
+    @abstractmethod
     def encode(self, text: str) -> list[int]:
         """Converts a single string to a list of token IDs."""
         pass

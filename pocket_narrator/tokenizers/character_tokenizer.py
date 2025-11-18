@@ -24,6 +24,9 @@ class CharacterTokenizer(AbstractTokenizer):
     def get_vocab_size(self) -> int:
         return len(self.vocabulary)
     
+    def token_to_id(self, token: str) -> int:
+        return self.char_to_idx.get(token, self.unk_token_id)
+    
     def train(self, corpus: list[str]):
         print("INFO: Training CharacterTokenizer from corpus...")
         unique_chars = sorted(list(set(''.join(corpus))))
