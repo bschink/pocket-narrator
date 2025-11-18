@@ -1,5 +1,3 @@
-# configs/ngram_char_tinystories.yaml
-
 run_name: "ngram_char_tinystories_30k"
 
 data:
