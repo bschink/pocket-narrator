@@ -1,138 +1,109 @@
 """
-Contains the implementation of a Byte-Pair Encoding (BPE) tokenizer with Regex that learns
-its vocabulary from a training corpus.
-The implementation is close to the GPT-2/GPT-4 tokenizers and https://github.com/karpathy/minbpe
+Contains the implementation of a Byte-Pair Encoding (BPE) tokenizer with Regex.
+This version is optimized for memory and computation to handle large datasets
+by training on a stream of data.
 """
 import os
 import regex as re
 import unicodedata
 import json
+from typing import List, Iterator
 from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
+from collections import Counter
+from functools import partial
+
 from .base_tokenizer import AbstractTokenizer
+from ..data_loader import batchify_text
 
 GPT2_SPLIT_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
+GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r{
+\n}]*|\s*[\r\n]|\s+(?!\S)|\s+"""
+
+def _count_pairs_in_batch(batch: List[str], pattern: str) -> Counter:
+    """A worker function that counts pairs in a single batch of text."""
+    stats = Counter()
+    compiled_pattern = re.compile(pattern)
+    for text in batch:
+        text_chunks = re.findall(compiled_pattern, text)
+        for chunk in text_chunks:
+            ids = list(chunk.encode("utf-8"))
+            for pair in zip(ids, ids[1:]):
+                stats[pair] += 1
+    return stats
 
 class BPETokenizer(AbstractTokenizer):
-    """A BPE tokenizer with Regex that learns its vocabulary from data."""
-    
-    def __init__(self, vocab_size: int, special_tokens: dict[str, int], pattern=GPT4_SPLIT_PATTERN):
-        """
-        - pattern: optional string to override the default
-        - special_tokens: str -> int dictionary of special tokens
-          example: {'<|endoftext|>': 100257}
-        """
+    """A BPE tokenizer that learns its vocabulary from a training data stream."""
+
+    def __init__(self, vocab_size: int, special_tokens: dict, pattern: str = GPT4_SPLIT_PATTERN, merges_per_round: int = 500):
         super().__init__()
         if vocab_size < 256:
             raise ValueError("Vocab size must be at least 256 for BPE.")
         self.vocab_size = vocab_size
-        self.merges = {} # (int, int) -> int
+        self.merges_per_round = merges_per_round
+        self.merges = {}
         self.special_tokens = {}
         self.inverse_special_tokens = {}
-        self.pattern =  pattern
+        self.pattern = pattern or GPT4_SPLIT_PATTERN
         self.compiled_pattern = re.compile(self.pattern)
-        self.register_special_tokens(special_tokens)
-        self.vocab = self._build_vocab() # int -> bytes
+        self.special_token_names = list(special_tokens.keys()) if isinstance(special_tokens, dict) else special_tokens
+        self.vocab = self._build_vocab()
 
-    def train(self, corpus: list[str], verbose: bool = False):
-        text = "".join(corpus)
-        num_merges = self.vocab_size - 256
+    def train(self, corpus: List[str]):
+        """
+        Trains the tokenizer using an iterative, parallelized re-scanning approach.
+        """
+        num_merges_total = self.vocab_size - (256 + len(self.special_token_names))
+        if num_merges_total <= 0:
+            return
 
-        print("INFO: Pre-tokenizing text...")
-        text_chunks = re.findall(self.compiled_pattern, text)
-        ids = [list(ch.encode("utf-8")) for ch in text_chunks]
+        num_rounds = (num_merges_total + self.merges_per_round - 1) // self.merges_per_round
+        self.merges = {}
 
-        print("INFO: Calculating initial pair statistics...")
-        stats = self._get_initial_stats(ids)
+        for round_num in range(num_rounds):
+            print(f"\n--- BPE Training Round {round_num + 1}/{num_rounds} ---")
+            
+            # scan with current merges, create fresh iterator
+            corpus_iterator = batchify_text(corpus, batch_size=5000, shuffle=False)
+            num_workers = max(1, cpu_count() - 1)
+            stats = Counter()
 
-        merges = {}
-        vocab = {idx: bytes([idx]) for idx in range(256)}
+            worker_func = partial(_count_pairs_in_batch, pattern=self.pattern)
+            
+            with Pool(processes=num_workers) as pool:
+                pbar = tqdm(pool.imap_unordered(worker_func, corpus_iterator), desc=f"Round {round_num+1} Scan")
+                for batch_stats in pbar:
+                    stats.update(batch_stats)
+            
+            # merge next batch of top pairs
+            merges_this_round = min(self.merges_per_round, num_merges_total - len(self.merges))
+            for i in range(merges_this_round):
+                if not stats:
+                    break
+                pair = max(stats, key=stats.get)
+                idx = 256 + len(self.merges)
+                self.merges[pair] = idx
+                stats.pop(pair)
         
-        for i in tqdm(range(num_merges), desc="Training BPE", unit="merge"):
-            if not stats:
-                print(f"INFO: No more pairs to merge after {i} merges. Stopping early.")
-                break
-            
-            pair = max(stats, key=stats.get)
-            
-            if verbose:
-                print(f"merge {i+1}/{num_merges}: {pair} -> {256 + i} ({vocab.get(pair[0], b'') + vocab.get(pair[1], b'')}) had {stats[pair]} occurrences")
-
-            idx = 256 + i
-            ids = self._merge_and_update_stats(ids, pair, idx, stats)
-
-            merges[pair] = idx
-            vocab[idx] = vocab.get(pair[0], b'') + vocab.get(pair[1], b'')
-
-        self.vocab = vocab
-        self.merges = merges
-
-    def _get_initial_stats(self, ids_list: list[list[int]]) -> dict:
-        """Calculate pair counts for the entire corpus once."""
-        counts = {}
-        for ids in ids_list:
-            for pair in zip(ids, ids[1:]):
-                counts[pair] = counts.get(pair, 0) + 1
-        return counts
-
-    # more complex merge-and-update method for training optimization
-    def _merge_and_update_stats(self, ids_list: list[list[int]], pair_to_merge: tuple, new_idx: int, stats: dict) -> list[list[int]]:
-        new_ids_list = []
+        # assign special tokens
+        self.special_tokens = {}
+        for i, token_name in enumerate(self.special_token_names):
+            self.special_tokens[token_name] = 256 + len(self.merges) + i
+        self.inverse_special_tokens = {v: k for k, v in self.special_tokens.items()}
         
-        stats.pop(pair_to_merge)
-
-        for ids in ids_list:
-            i = 0
-            new_ids = []
-            while i < len(ids):
-                if i < len(ids) - 1 and (ids[i], ids[i+1]) == pair_to_merge:
-                    # decrement the count of the pair that is being destroyed on the left
-                    if i > 0:
-                        left_pair = (ids[i-1], pair_to_merge[0])
-                        stats[left_pair] = stats.get(left_pair, 0) - 1
-                    
-                    # decrement the count of the pair that is being destroyed on the right
-                    if i < len(ids) - 2:
-                        right_pair = (pair_to_merge[1], ids[i+2])
-                        stats[right_pair] = stats.get(right_pair, 0) - 1
-                        
-                    new_ids.append(new_idx)
-                    i += 2
-                else:
-                    new_ids.append(ids[i])
-                    i += 1
-
-            # increment counts of newly created pairs
-            for j in range(len(new_ids) - 1):
-                current_pair = (new_ids[j], new_ids[j+1])
-
-                if new_idx in current_pair:
-                    stats[current_pair] = stats.get(current_pair, 0) + 1
-            
-            new_ids_list.append(new_ids)
-            
-        return new_ids_list
-
+        self.vocab = self._build_vocab()
+        print("\nBPE training complete.")
+        
     def get_vocab_size(self) -> int:
         return len(self.vocab)
-
-    def register_special_tokens(self, special_tokens):
-        # special_tokens is a dictionary of str -> int
-        # example: {"<|endoftext|>": 100257}
-        self.special_tokens = special_tokens
-        self.inverse_special_tokens = {v: k for k, v in special_tokens.items()}
+    
+    def token_to_id(self, token: str) -> int:
+        return self.special_tokens.get(token)
 
     def encode(self, text: str) -> list[int]:
-        return self._encode_internal(text, allowed_special="none_raise")
+        return self._encode_internal(text, allowed_special="all")
 
     def _encode_internal(self, text, allowed_special="none_raise"):
-        """
-        Unlike encode_ordinary, this function handles special tokens.
-        allowed_special: can be "all"|"none"|"none_raise" or a custom set of special tokens
-        if none_raise, then an error is raised if any special token is encountered in text
-        this is the default tiktoken behavior right now as well
-        any other behavior is either annoying, or a major footgun
-        """
         special = None
         if allowed_special == "all":
             special = self.special_tokens
@@ -140,11 +111,13 @@ class BPETokenizer(AbstractTokenizer):
             special = {}
         elif allowed_special == "none_raise":
             special = {}
-            assert all(token not in text for token in self.special_tokens)
+            if self.special_tokens:
+                assert all(token not in text for token in self.special_tokens)
         elif isinstance(allowed_special, set):
             special = {k: v for k, v in self.special_tokens.items() if k in allowed_special}
         else:
             raise ValueError(f"allowed_special={allowed_special} not understood")
+
         if not special:
             return self._encode_ordinary(text)
         
@@ -181,32 +154,22 @@ class BPETokenizer(AbstractTokenizer):
     def _build_vocab(self):
         vocab = {idx: bytes([idx]) for idx in range(256)}
         for (p0, p1), idx in self.merges.items():
-            vocab[idx] = vocab[p0] + vocab[p1]
+            vocab[idx] = vocab.get(p0, b'') + vocab.get(p1, b'')
         for special, idx in self.special_tokens.items():
             vocab[idx] = special.encode("utf-8")
         return vocab
     
     def _get_stats(self, ids, counts=None):
-        """
-        Given a list of integers, return a dictionary of counts of consecutive pairs
-        Example: [1, 2, 3, 1, 2] -> {(1, 2): 2, (2, 3): 1, (3, 1): 1}
-        Optionally allows to update an existing dictionary of counts
-        """
         counts = {} if counts is None else counts
         for pair in zip(ids, ids[1:]):
             counts[pair] = counts.get(pair, 0) + 1
         return counts
     
     def _merge(self, ids, pair, idx):
-        """
-        In the list of integers (ids), replace all consecutive occurrences
-        of pair with the new integer token idx
-        Example: ids=[1, 2, 3, 1, 2], pair=(1, 2), idx=4 -> [4, 3, 4]
-        """
         newids = []
         i = 0
         while i < len(ids):
-            if ids[i] == pair[0] and i < len(ids) - 1 and ids[i+1] == pair[1]:
+            if i < len(ids) - 1 and ids[i] == pair[0] and ids[i+1] == pair[1]:
                 newids.append(idx)
                 i += 2
             else:
@@ -215,33 +178,18 @@ class BPETokenizer(AbstractTokenizer):
         return newids
     
     def _encode_chunk(self, chunk_bytes):
-        """
-        Encode a single chunk of bytes using the learned BPE merges.
-        
-        Args:
-            chunk_bytes: bytes object to encode
-            
-        Returns:
-            list of token ids
-        """
         ids = list(chunk_bytes)
-        
         while len(ids) >= 2:
-            stats = self._get_stats(ids, {})
+            stats = self._get_stats(ids)
             pair = min(stats, key=lambda p: self.merges.get(p, float("inf")))
-            
             if pair not in self.merges:
                 break
-                
             idx = self.merges[pair]
             ids = self._merge(ids, pair, idx)
-            
         return ids
     
     def _encode_ordinary(self, text):
-        """Encoding that ignores any special tokens."""
         text_chunks = re.findall(self.compiled_pattern, text)
-
         ids = []
         for chunk in text_chunks:
             chunk_bytes = chunk.encode("utf-8")
@@ -250,71 +198,30 @@ class BPETokenizer(AbstractTokenizer):
         return ids
 
     def save(self, save_path: str):
-        """
-        Saves the tokenizer state to a specified directory.
-
-        This will create two files inside the directory:
-        - bpe.model: The core model file with merges and special tokens, for loading.
-        - bpe.vocab: A human-readable vocabulary file for inspection.
-
-        Args:
-            save_path (str): The path to the DIRECTORY where files will be saved.
-        """
-        if not self.merges:
-            raise ValueError("Cannot save an untrained BPE tokenizer.")
-        
-        print(f"INFO: Saving BPE tokenizer to directory: {save_path}")
         os.makedirs(save_path, exist_ok=True)
-
         model_file = os.path.join(save_path, "bpe.model")
-        vocab_file = os.path.join(save_path, "bpe.vocab")
 
         with open(model_file, 'w', encoding="utf-8") as f:
-            f.write(f"{self.pattern}\n")
+            # encode as JSON to handle special characters
+            f.write(f"{json.dumps(self.pattern)}\n")
             f.write(f"{len(self.special_tokens)}\n")
             for special, idx in self.special_tokens.items():
                 f.write(f"{special} {idx}\n")
             for idx1, idx2 in self.merges:
                 f.write(f"{idx1} {idx2}\n")
 
-        inverted_merges = {idx: pair for pair, idx in self.merges.items()}
-        with open(vocab_file, "w", encoding="utf-8") as f:
-            for idx, token in self.vocab.items():
-                s = self._render_token(token)
-                if idx in inverted_merges:
-                    idx0, idx1 = inverted_merges[idx]
-                    s0 = self._render_token(self.vocab[idx0])
-                    s1 = self._render_token(self.vocab[idx1])
-                    f.write(f"[{s0}][{s1}] -> [{s}] {idx}\n")
-                else:
-                    f.write(f"[{s}] {idx}\n")
-
     @classmethod
     def load(cls, load_path: str):
-        """
-        Loads the tokenizer state from a directory.
-
-        This expects to find a 'bpe.model' file inside the specified directory.
-
-        Args:
-            load_path (str): The path to the DIRECTORY containing the model file.
-        
-        Returns:
-            An initialized and loaded BPETokenizer instance.
-        """
-        print(f"INFO: Loading BPE tokenizer from directory: {load_path}")
         model_file = os.path.join(load_path, "bpe.model")
-
         if not os.path.exists(model_file):
             raise FileNotFoundError(f"Required model file 'bpe.model' not found in {load_path}")
 
         merges = {}
         special_tokens = {}
         idx = 256
-        pattern = GPT4_SPLIT_PATTERN
-        
         with open(model_file, 'r', encoding="utf-8") as f:
-            pattern = f.readline().strip()
+            # Decode from JSON to handle special characters
+            pattern = json.loads(f.readline().strip())
             num_special = int(f.readline().strip())
             for _ in range(num_special):
                 special, special_idx = f.readline().strip().split()
@@ -324,29 +231,16 @@ class BPETokenizer(AbstractTokenizer):
                 merges[(idx1, idx2)] = idx
                 idx += 1
         
-        tokenizer = cls(vocab_size=256, special_tokens=special_tokens, pattern=pattern)
-        
+        # vocab size will be determined by the loaded merges and special tokens
+        vocab_size = 256 + len(merges) + len(special_tokens)
+        tokenizer = cls(vocab_size=vocab_size, special_tokens=list(special_tokens.keys()), pattern=pattern)
         tokenizer.merges = merges
+        tokenizer.special_tokens = special_tokens
+        tokenizer.inverse_special_tokens = {v: k for k, v in special_tokens.items()}
         tokenizer.vocab = tokenizer._build_vocab()
-        tokenizer.vocab_size = len(tokenizer.vocab)
-
+        
         return tokenizer
 
-    def _replace_control_characters(self, s: str) -> str:
-        # we don't want to print control characters
-        # which distort the output (e.g. \n or much worse)
-        # https://stackoverflow.com/questions/4324790/removing-control-characters-from-a-string-in-python/19016117#19016117
-        # http://www.unicode.org/reports/tr44/#GC_Values_Table
-        chars = []
-        for ch in s:
-            if unicodedata.category(ch)[0] != "C":
-                chars.append(ch) # this character is ok
-            else:
-                chars.append(f"\\u{ord(ch):04x}") # escape
-        return "".join(chars)
-
     def _render_token(self, t: bytes) -> str:
-        # pretty print a token, escaping control characters
         s = t.decode('utf-8', errors='replace')
-        s = self._replace_control_characters(s)
-        return s
+        return "".join(f"\\u{ord(ch):04x}" if unicodedata.category(ch)[0] == "C" else ch for ch in s)

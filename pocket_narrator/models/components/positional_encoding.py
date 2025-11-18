@@ -28,3 +28,68 @@ class SinusoidalPositionalEncoding(AbstractPositionalEncoding):
         """
         x = x + self.pe[:, :x.size(1), :]
         return self.dropout(x)
+    
+class RotaryPositionalEncoding(AbstractPositionalEncoding):
+    """
+    Implements Rotary Positional Embeddings (RoPE) from the paper RoFormer.
+    https://arxiv.org/abs/2104.09864
+
+    This module does not add to the input tensor but is instead applied to the
+    Query and Key tensors within the attention mechanism.
+    """
+    def __init__(self, d_model: int, max_len: int, base: int = 10000):
+        super().__init__()
+        assert d_model % 2 == 0, "d_model must be even for Rotary Positional Encoding."
+        
+        # compute theta frequencies for rotations
+        # shape: (d_model / 2)
+        theta = 1.0 / (base ** (torch.arange(0, d_model, 2).float() / d_model))
+
+        # compute frequency map for all positions creating matrix of all m * theta_i values.
+        # shape: (max_len, d_model / 2)
+        seq_idx = torch.arange(max_len)
+        freqs = torch.outer(seq_idx, theta)
+
+        # convert to complex numbers
+        # multiplication with a complex number of magnitude 1 (e^i*theta) -> rotation representation
+        # shape: (max_len, d_model / 2)
+        freqs_complex = torch.polar(torch.ones_like(freqs), freqs)
+        
+        # register as buffer so it moves to correct device with model
+        # shape: (1, max_len, 1, d_model / 2)
+        self.register_buffer('freqs_complex', freqs_complex.unsqueeze(0).unsqueeze(2))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Applies the rotary rotation to the input tensor.
+
+        Args:
+            x (torch.Tensor): Input tensor (Query or Key) of shape 
+                              (batch, n_head, seq_len, d_k).
+        
+        Returns:
+            torch.Tensor: Rotated tensor of the same shape.
+        """
+        # reshape x to view the last dimension as pairs of two
+        # shape: (batch, n_head, seq_len, d_k) -> (batch, n_head, seq_len, d_k/2, 2)
+        x_reshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+        # now as complex numbers
+        # shape: (batch, n_head, seq_len, d_k/2)
+        x_complex = torch.view_as_complex(x_reshaped)
+        
+        # get frequencies for current sequence length
+        # shape: (1, seq_len, 1, d_k/2)
+        freqs = self.freqs_complex[:, :x.shape[2], :, :]
+        
+        # perform the rotation via element-wise complex multiplication
+        # shape of x_complex: (batch, n_head, seq_len, d_k/2)
+        # shape of freqs:     (1,      seq_len, 1,      d_k/2)
+        x_rotated_complex = x_complex * freqs
+
+        # convert back to a real tensor.
+        # shape: (batch, n_head, seq_len, d_k/2, 2)
+        x_rotated = torch.view_as_real(x_rotated_complex)
+        # shape: (batch, n_head, seq_len, d_k)
+        x_out = x_rotated.reshape(*x.shape)
+        
+        return x_out.type_as(x)

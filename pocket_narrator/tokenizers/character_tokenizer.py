@@ -9,20 +9,28 @@ from .base_tokenizer import AbstractTokenizer
 class CharacterTokenizer(AbstractTokenizer):
     """A character-level tokenizer that learns its vocabulary from data."""
 
-    def __init__(self, special_tokens: dict[str, int]):
-        self.special_tokens = list(special_tokens.keys())
+    def __init__(self, special_tokens: list[str] = None):
+        self.special_token_names = special_tokens if special_tokens else []
         self.vocabulary = []
         self.char_to_idx = {}
         self.idx_to_char = {}
         self.unk_token_id = None
+    
+    @property
+    def special_tokens(self) -> dict:
+        """Return special tokens as a dict mapping token names to IDs."""
+        return {token: self.char_to_idx[token] for token in self.special_token_names if token in self.char_to_idx}
 
     def get_vocab_size(self) -> int:
         return len(self.vocabulary)
     
+    def token_to_id(self, token: str) -> int:
+        return self.char_to_idx.get(token, self.unk_token_id)
+    
     def train(self, corpus: list[str]):
         print("INFO: Training CharacterTokenizer from corpus...")
         unique_chars = sorted(list(set(''.join(corpus))))
-        self.vocabulary = self.special_tokens + unique_chars
+        self.vocabulary = self.special_token_names + unique_chars
         self.char_to_idx = {char: idx for idx, char in enumerate(self.vocabulary)}
         self.idx_to_char = {idx: char for idx, char in enumerate(self.vocabulary)}
         # Set unk_token_id if <unk> exists in vocabulary, otherwise use 0
@@ -64,14 +72,14 @@ class CharacterTokenizer(AbstractTokenizer):
         with open(file_path, 'r', encoding='utf-8') as f:
             vocabulary = json.load(f)
         
-        special_tokens = {}
-        for idx, char in enumerate(vocabulary):
-            if char.startswith('<') and char.endswith('>'):
-                special_tokens[char] = idx
+        special_tokens_list = []
+        for token in vocabulary:
+            if token.startswith('<') and token.endswith('>'):
+                special_tokens_list.append(token)
         
-        tokenizer = cls(special_tokens=special_tokens)
-        tokenizer.vocabulary = vocabulary
+        tokenizer = cls(special_tokens=special_tokens_list)
             
+        tokenizer.vocabulary = vocabulary
         tokenizer.char_to_idx = {char: idx for idx, char in enumerate(tokenizer.vocabulary)}
         tokenizer.idx_to_char = {idx: char for idx, char in enumerate(tokenizer.vocabulary)}
         tokenizer.unk_token_id = tokenizer.char_to_idx.get('<unk>')

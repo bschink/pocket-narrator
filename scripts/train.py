@@ -83,7 +83,8 @@ def main():
     )
     parser.add_argument("--tokenizer_type", type=str, default="bpe", help="Type of tokenizer to use ('character', 'bpe').")
     parser.add_argument("--tokenizer_path", type=str, default=None, help="Path to save/load tokenizer. If not provided, defaults to tokenizer-type-specific path.")
-    parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024, "special_tokens": {"<bos>": 1025, "<eos>": 1026}}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
+    parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024, "special_tokens": ["<bos>", "<eos>"], "merges_per_round": 200}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
+    parser.add_argument("--model_type", type=str, default="ngram", help="Type of model to train ('ngram', 'transformer').")
     parser.add_argument(
         "--generation_strategy",
         type=str,
@@ -122,33 +123,35 @@ def main():
 
     # --- Initialization ---
     print("Initializing tokenizer and model...")
+    tokenizer_path = args.tokenizer_path
+    if tokenizer_path is None:
+        tokenizer_path = f"tokenizers/{args.tokenizer_type}_tokenizer/"
     tokenizer = get_tokenizer(
-        tokenizer_type=args.tokenizer_type, 
-        tokenizer_path=args.tokenizer_path,
-        train_corpus=train_lines,
+        tokenizer_type=args.tokenizer_type,
+        tokenizer_path=tokenizer_path,
         **args.tokenizer_config
     )
 
-    model_specific_config = MODEL_CONFIG.copy()
-    
-    # Get EOS token ID based on tokenizer type
-    if hasattr(tokenizer, 'char_to_idx'):
-        # Character tokenizer
-        model_specific_config['eos_token_id'] = tokenizer.char_to_idx['<eos>']
-    elif hasattr(tokenizer, 'special_tokens') and '<eos>' in tokenizer.special_tokens:
-        # BPE tokenizer with registered special tokens
-        model_specific_config['eos_token_id'] = tokenizer.special_tokens['<eos>']
+    if not os.path.exists(tokenizer_path):
+        print(f"INFO: Tokenizer not found at {tokenizer_path}. Training tokenizer...")
+        tokenizer.train(train_lines)
+        tokenizer.save(tokenizer_path)
+        print(f"INFO: Tokenizer trained and saved to {tokenizer_path}.")
     else:
-        # No EOS token found, use None or vocab_size - 1 as fallback
-        print("WARNING: No <eos> token found in tokenizer. Using None for eos_token_id.")
-        model_specific_config['eos_token_id'] = None
+        print("INFO: Using pre-existing/loaded tokenizer.")
+
+    eos_token_id = tokenizer.token_to_id('<eos>')
+    if eos_token_id is None:
+        print("WARNING: No <eos> token found in tokenizer.")
+
+    model_config = MODEL_CONFIG.copy()
+    model_config['eos_token_id'] = eos_token_id
     
     model = get_model(
-        model_type=MODEL_TYPE,
+        model_type=args.model_type,
         vocab_size=tokenizer.get_vocab_size(),
-        **model_specific_config
+        **model_config
     )
-
     trainer = get_trainer(trainer_type=TRAINER_TYPE)
 
     # --- Training ---
@@ -160,8 +163,6 @@ def main():
     print("\n--- Starting Validation ---")
     val_batch_iterator = batchify_text(val_lines, batch_size=BATCH_SIZE, shuffle=False)
     val_batch_text = next(val_batch_iterator)
-    val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
-    
     val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
 
     predicted_tokens_batch = model.predict_sequence_batch(
@@ -222,7 +223,7 @@ def main():
         "data_path": args.data,
         "generation_strategy": args.generation_strategy,
         "no_repeat_ngram_size": args.no_repeat_ngram_size,
-        "model_config": model_specific_config,
+        "model_config": model_config,
         "val_ratio": VAL_RATIO,
         "batch_size": BATCH_SIZE,
     }
