@@ -5,13 +5,8 @@ This script connects all modular components (data loader, tokenizer, model, eval
 into a functional end-to-end pipeline.
 
 
-
 PYTHONPATH=. python3 scripts/train.py \
-  --generation_strategy sample \
-  --tokenizer_type character \
-  --tokenizer_path tokenizers/character_tokenizer_vocab.json \
-  --no_repeat_ngram_size 3 \
-  --data data/processed/TinyStories/TinyStories-train.bos_eos_30k.txt
+  --config configs/transformer_bpe_30ktinystories.yaml 
 
   
   PYTHONPATH=. python3 scripts/train.py \
@@ -34,6 +29,7 @@ import argparse
 import os
 from datetime import datetime
 import json
+import yaml
 
 from pocket_narrator.models import get_model
 from pocket_narrator.tokenizers import get_tokenizer 
@@ -76,15 +72,41 @@ def main():
     # --- CLI arguments ---
     parser = argparse.ArgumentParser(description="Train an n-gram PocketNarrator model.")
     parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to a YAML config file with experiment settings.",
+    )
+    parser.add_argument(
         "--data",
         type=str,
         default=DATA_PATH,
         help=f"Path to training dataset (default: {DATA_PATH})",
     )
-    parser.add_argument("--tokenizer_type", type=str, default="bpe", help="Type of tokenizer to use ('character', 'bpe').")
-    parser.add_argument("--tokenizer_path", type=str, default=None, help="Path to save/load tokenizer. If not provided, defaults to tokenizer-type-specific path.")
-    parser.add_argument("--tokenizer_config", type=json.loads, default='{"vocab_size": 1024, "special_tokens": ["<bos>", "<eos>"], "merges_per_round": 200}', help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').')
-    parser.add_argument("--model_type", type=str, default="ngram", help="Type of model to train ('ngram', 'transformer').")
+    parser.add_argument(
+        "--tokenizer_type",
+        type=str,
+        default="bpe",
+        help="Type of tokenizer to use ('character', 'bpe').",
+    )
+    parser.add_argument(
+        "--tokenizer_path",
+        type=str,
+        default=None,
+        help="Path to save/load tokenizer. If not provided, defaults to tokenizer-type-specific path.",
+    )
+    parser.add_argument(
+        "--tokenizer_config",
+        type=json.loads,
+        default='{"vocab_size": 1024, "special_tokens": ["<bos>", "<eos>"], "merges_per_round": 200}',
+        help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').',
+    )
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="ngram",
+        help="Type of model to train ('ngram', 'transformer').",
+    )
     parser.add_argument(
         "--generation_strategy",
         type=str,
@@ -108,28 +130,98 @@ def main():
         "--model_name",
         type=str,
         default=None,
-        help="Filename for the model (e.g. 'my_experiment.model'). "
-             "If not given, a name based on model type and timestamp will be used.",
+        help=(
+            "Filename for the model (e.g. 'my_experiment.model'). "
+            "If not given, a name based on model type and timestamp will be used."
+        ),
     )
     args = parser.parse_args()
-    
-    print(f"--- Starting Training Run for {MODEL_TYPE} Model ---")
+
+    # ---- Local runtime config (start from defaults / CLI, then override with YAML) ----
+    data_path = args.data
+    val_ratio = VAL_RATIO
+    random_seed = RANDOM_SEED
+    batch_size = BATCH_SIZE
+
+    tokenizer_type = args.tokenizer_type
+    tokenizer_path = args.tokenizer_path
+    bpe_tokenizer_config = args.tokenizer_config  # for BPE only
+    char_special_tokens = None  # will be filled from YAML
+
+    model_type = args.model_type
+    model_config = MODEL_CONFIG.copy()
+    trainer_type = TRAINER_TYPE
+
+    generation_strategy = args.generation_strategy
+    no_repeat_ngram_size = args.no_repeat_ngram_size
+
+    model_dir = args.model_dir
+    model_name = args.model_name
+
+    # --- YAML override, if provided ---
+    cfg = None
+    if args.config is not None:
+        with open(args.config, "r") as f:
+            cfg = yaml.safe_load(f)
+
+        # data
+        data_path = cfg["data"]["path"]
+        val_ratio = cfg["data"]["val_ratio"]
+        random_seed = cfg["data"]["random_seed"]
+        batch_size = cfg["data"]["batch_size"]
+
+        # tokenizer
+        tokenizer_type = cfg["tokenizer"]["type"]
+        tokenizer_path = cfg["tokenizer"]["path"]
+        # for character tokenizer we may have special tokens
+        char_special_tokens = cfg["tokenizer"].get("special_tokens", None)
+
+        # model
+        model_type = cfg["model"]["type"]
+        if model_type == "ngram":
+            model_config = {"n": cfg["model"]["n"]}
+        else:
+            # you can expand this later for transformer configs
+            model_config = MODEL_CONFIG.copy()
+
+        trainer_type = cfg["trainer"]["type"]
+
+        # generation
+        generation_strategy = cfg["generation"]["strategy"]
+        no_repeat_ngram_size = cfg["generation"]["no_repeat_ngram_size"]
+
+        # saving
+        model_dir = cfg["saving"]["model_dir"]
+        model_name = cfg["saving"]["model_name"]
+
+    print(f"--- Starting Training Run for {model_type} Model ---")
 
     # --- Data Loading and Preparation ---
-    print(f"Loading and splitting dataset from {args.data}...")
-    all_lines = load_text_dataset(args.data)
-    train_lines, val_lines = split_text(all_lines, val_ratio=VAL_RATIO, seed=RANDOM_SEED)
+    print(f"Loading and splitting dataset from {data_path}...")
+    all_lines = load_text_dataset(data_path)
+    train_lines, val_lines = split_text(all_lines, val_ratio=val_ratio, seed=random_seed)
     print(f"Dataset loaded: {len(train_lines)} training samples, {len(val_lines)} validation samples.")
 
     # --- Initialization ---
     print("Initializing tokenizer and model...")
-    tokenizer_path = args.tokenizer_path
+
     if tokenizer_path is None:
-        tokenizer_path = f"tokenizers/{args.tokenizer_type}_tokenizer/"
+        tokenizer_path = f"tokenizers/{tokenizer_type}_tokenizer/"
+
+    # Build tokenizer kwargs based on tokenizer type
+    if tokenizer_type == "bpe":
+        tokenizer_kwargs = bpe_tokenizer_config.copy()
+    elif tokenizer_type == "character":
+        tokenizer_kwargs = {}
+        if char_special_tokens is not None:
+            tokenizer_kwargs["special_tokens"] = char_special_tokens
+    else:
+        raise ValueError(f"Unknown tokenizer type: {tokenizer_type}")
+
     tokenizer = get_tokenizer(
-        tokenizer_type=args.tokenizer_type,
+        tokenizer_type=tokenizer_type,
         tokenizer_path=tokenizer_path,
-        **args.tokenizer_config
+        **tokenizer_kwargs,
     )
 
     if not os.path.exists(tokenizer_path):
@@ -140,19 +232,19 @@ def main():
     else:
         print("INFO: Using pre-existing/loaded tokenizer.")
 
-    eos_token_id = tokenizer.token_to_id('<eos>')
+    eos_token_id = tokenizer.token_to_id("<eos>")
     if eos_token_id is None:
         print("WARNING: No <eos> token found in tokenizer.")
 
-    model_config = MODEL_CONFIG.copy()
-    model_config['eos_token_id'] = eos_token_id
-    
+    model_config = model_config.copy()
+    model_config["eos_token_id"] = eos_token_id
+
     model = get_model(
-        model_type=args.model_type,
+        model_type=model_type,
         vocab_size=tokenizer.get_vocab_size(),
-        **model_config
+        **model_config,
     )
-    trainer = get_trainer(trainer_type=TRAINER_TYPE)
+    trainer = get_trainer(trainer_type=trainer_type)
 
     # --- Training ---
     print("\n--- Starting Model Training ---")
@@ -161,14 +253,35 @@ def main():
 
     # --- Validation ---
     print("\n--- Starting Validation ---")
-    val_batch_iterator = batchify_text(val_lines, batch_size=BATCH_SIZE, shuffle=False)
+    val_batch_iterator = batchify_text(val_lines, batch_size=batch_size, shuffle=False)
     val_batch_text = next(val_batch_iterator)
     val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
 
+    # --- DEBUG: check vocab sizes and token ranges ---
+    print("DEBUG: tokenizer vocab_size:", tokenizer.get_vocab_size())
+    try:
+        # TransformerModel has token_embedding; n-gram model won't
+        embedding = getattr(model, "token_embedding", None)
+        if embedding is not None:
+            print("DEBUG: model embedding num_embeddings:", embedding.num_embeddings)
+        else:
+            print("DEBUG: model has no token_embedding attribute (probably n-gram).")
+    except Exception as e:
+        print("DEBUG: error reading model.embedding:", e)
+
+    # compute max token id in val_inputs
+    non_empty_seqs = [seq for seq in val_inputs if len(seq) > 0]
+    if non_empty_seqs:
+        max_token_id = max(max(seq) for seq in non_empty_seqs)
+        print("DEBUG: max token id in val_inputs:", max_token_id)
+    else:
+        print("DEBUG: val_inputs is empty!")
+
+
     predicted_tokens_batch = model.predict_sequence_batch(
         val_inputs,
-        strategy=args.generation_strategy,
-        no_repeat_ngram_size=args.no_repeat_ngram_size,
+        strategy=generation_strategy,
+        no_repeat_ngram_size=no_repeat_ngram_size,
     )
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     target_text_batch = tokenizer.decode_batch(target_tokens_batch)
@@ -181,34 +294,35 @@ def main():
         predicted_tokens=predicted_tokens_batch,
         target_tokens=target_tokens_batch,
         predicted_text=predicted_text_batch,
-        target_text=target_text_batch
+        target_text=target_text_batch,
     )
-    
+
     print("\n--- Evaluation Summary ---")
     for metric, value in evaluation_summary.items():
         print(f"{metric}: {value:.4f}")
 
-        # --- Determine model save path ---
-    os.makedirs(args.model_dir, exist_ok=True)
+    # --- Determine model save path ---
+    os.makedirs(model_dir, exist_ok=True)
 
-    if args.model_name:
-        model_filename = args.model_name
+    if model_name:
+        model_filename = model_name
     else:
         # default: <model_type>_YYYYMMDD_HHMMSS.model
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_filename = f"{MODEL_TYPE}_{timestamp}.model"
+        model_filename = f"{model_type}_{timestamp}.model"
 
-    model_path = os.path.join(args.model_dir, model_filename)
+    model_path = os.path.join(model_dir, model_filename)
 
     if os.path.exists(model_path):
-        print(f"ERROR: Model file '{model_path}' already exists. "
-              f"Choose a different --model_name or delete the existing file.")
+        print(
+            f"ERROR: Model file '{model_path}' already exists. "
+            f"Choose a different --model_name or delete the existing file."
+        )
         sys.exit(1)
-
 
     # --- Save Trained Model ---
     model.save(model_path)
-    
+
     print(f"\n--- Training run finished successfully! Model saved to {model_path} ---")
 
     # --- Append metadata to model log to keep track ---
@@ -216,20 +330,20 @@ def main():
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "model_path": model_path,
         "model_name": model_filename,
-        "model_type": MODEL_TYPE,
-        "trainer_type": TRAINER_TYPE,
-        "tokenizer_type": TOKENIZER_TYPE,
-        "tokenizer_path": TOKENIZER_PATH,
-        "data_path": args.data,
-        "generation_strategy": args.generation_strategy,
-        "no_repeat_ngram_size": args.no_repeat_ngram_size,
+        "model_type": model_type,
+        "trainer_type": trainer_type,
+        "tokenizer_type": tokenizer_type,
+        "tokenizer_path": tokenizer_path,
+        "data_path": data_path,
+        "generation_strategy": generation_strategy,
+        "no_repeat_ngram_size": no_repeat_ngram_size,
         "model_config": model_config,
-        "val_ratio": VAL_RATIO,
-        "batch_size": BATCH_SIZE,
+        "val_ratio": val_ratio,
+        "batch_size": batch_size,
     }
 
-    log_path = os.path.join(args.model_dir, "model_log.json")
-    
+    log_path = os.path.join(model_dir, "model_log.json")
+
     # if file exists, load it; otherwise start a new list
     if os.path.exists(log_path):
         try:

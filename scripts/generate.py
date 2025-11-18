@@ -12,11 +12,11 @@ How to Use:
 
     PYTHONPATH=. python3 scripts/generate.py \
     --prompt "the tree is" \
-    --model_path models/ngram_all_tinystories.model \
+    --model_path models/cool_models/new_ngram_allgpt4_tinystories.model \
     --generation_strategy sample \
     --no_repeat_ngram_size 3 \
     --tokenizer_type character \
-    --tokenizer_path tokenizers/better_character_tokenizer
+    --tokenizer_path tokenizers/new_char_tokenizer
 
   - To see all options:
     python scripts/generate.py --help

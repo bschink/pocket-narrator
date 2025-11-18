@@ -5,6 +5,8 @@ numpy>=1.26
 pandas>=2.2
 matplotlib
 torch>=2.0
+transformers # to make use of GPT2
+pyyaml
 
 # for fetching datasets from Hugging Face Hub
 huggingface_hub>=0.24
@@ -22,3 +24,6 @@ regex
 # tests
 pytest
 pytest-mock
+
+# logging
+wandb
