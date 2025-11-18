@@ -228,3 +228,7 @@ models/*
 # tokenizer artifacts
 tokenizers/*
 !tokenizers/.gitkeep
+
+# wandb logging artifacts
+wandb/*
+!wandb/.gitkeep

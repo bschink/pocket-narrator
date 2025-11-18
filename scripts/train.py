@@ -30,6 +30,7 @@ import os
 from datetime import datetime
 import json
 import yaml
+import wandb
 
 from pocket_narrator.models import get_model
 from pocket_narrator.tokenizers import get_tokenizer 
@@ -194,6 +195,42 @@ def main():
         model_dir = cfg["saving"]["model_dir"]
         model_name = cfg["saving"]["model_name"]
 
+    # --- Initialize Weights & Biases (W&B) run ---
+    if args.config is not None and cfg is not None:
+        run_name = cfg.get("run_name", None)
+    else:
+        run_name = None
+
+    if run_name is None:
+        # fallback if no run_name in YAML
+        run_name = f"{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    wandb_config = {
+        "run_name": run_name,
+        "config_file": args.config,
+        "data_path": data_path,
+        "val_ratio": val_ratio,
+        "random_seed": random_seed,
+        "batch_size": batch_size,
+        "tokenizer_type": tokenizer_type,
+        "tokenizer_path": tokenizer_path,
+        "model_type": model_type,
+        "model_config": model_config,
+        "trainer_type": trainer_type,
+        "generation_strategy": generation_strategy,
+        "no_repeat_ngram_size": no_repeat_ngram_size,
+        "model_dir": model_dir,
+        "model_name": model_name,
+    }
+
+    wandb.init(
+    entity="once-upon-a-prompt",
+    project="pocket-narrator",
+    name=run_name,
+    config=wandb_config,
+    )
+
+
     print(f"--- Starting Training Run for {model_type} Model ---")
 
     # --- Data Loading and Preparation ---
@@ -300,6 +337,15 @@ def main():
     print("\n--- Evaluation Summary ---")
     for metric, value in evaluation_summary.items():
         print(f"{metric}: {value:.4f}")
+    
+    # --- Log evaluation metrics to W&B ---
+    wandb_metrics = {f"eval/{metric}": value for metric, value in evaluation_summary.items()}
+    # we can add other things to log later here
+    wandb_metrics["data/train_size"] = len(train_lines)
+    wandb_metrics["data/val_size"] = len(val_lines)
+
+    wandb.log(wandb_metrics)
+
 
     # --- Determine model save path ---
     os.makedirs(model_dir, exist_ok=True)
@@ -364,6 +410,8 @@ def main():
 
     print(f"Model metadata appended to log: {log_path}")
 
+    # --- Finish W&B run ---
+    wandb.finish()
 
 if __name__ == "__main__":
     main()
