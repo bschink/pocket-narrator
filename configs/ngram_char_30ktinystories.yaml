@@ -1,0 +1,29 @@
+# configs/ngram_char_tinystories.yaml
+
+run_name: "ngram_char_tinystories_30k"
+
+data:
+  path: "data/processed/TinyStories/TinyStories-train.bos_eos_30k.txt" # !!!!!
+  val_ratio: 0.2
+  random_seed: 42
+  batch_size: 2
+
+tokenizer:
+  type: "character"
+  path: "tokenizers/new_char_tokenizer" # !!!!!!!!!! question: does it make sense to train this ngram on 30k lines of data but it uses a tokenizer that's trained on the full dataset?
+  special_tokens: ["<bos>", "<eos>", "<unk>"]
+
+model:
+  type: "ngram"
+  n: 3
+
+trainer:
+  type: "ngram"
+
+generation:
+  strategy: "sample"
+  no_repeat_ngram_size: 3
+
+saving:
+  model_dir: "models/n_gram"
+  model_name: null   # null means: auto-generate from timestamp

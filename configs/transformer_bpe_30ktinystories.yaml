@@ -1,0 +1,28 @@
+run_name: "transformer_char_tinystories_30k"
+
+data:
+  path: "data/processed/TinyStories/TinyStories-train.bos_eos_30k.txt"
+  val_ratio: 0.2
+  random_seed: 42
+  batch_size: 2
+
+tokenizer:
+  type: "bpe"
+  path: "tokenizers/bpe_tokenizer"
+  special_tokens: ["<bos>", "<eos>", "<unk>"]
+
+model:
+  type: "transformer"
+  # using TransformerModel.from_config defaults for now
+
+trainer:
+  type: "transformer"
+  # using TransformerTrainer defaults
+
+generation:
+  strategy: "greedy"
+  no_repeat_ngram_size: 3
+
+saving:
+  model_dir: "models/transformer"
+  model_name: null

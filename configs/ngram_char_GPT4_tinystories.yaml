@@ -1,0 +1,29 @@
+# configs/ngram_char_tinystories.yaml
+
+run_name: "ngram_char_GPT4_tinystories"
+
+data:
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.bos_eos.txt"
+  val_ratio: 0.2
+  random_seed: 42
+  batch_size: 2
+
+tokenizer:
+  type: "character"
+  path: "tokenizers/new_char_tokenizer"
+  special_tokens: ["<bos>", "<eos>", "<unk>"]
+
+model:
+  type: "ngram"
+  n: 3
+
+trainer:
+  type: "ngram"
+
+generation:
+  strategy: "sample"
+  no_repeat_ngram_size: 3
+
+saving:
+  model_dir: "models/n_gram"
+  model_name: null   # null means: auto-generate from timestamp
