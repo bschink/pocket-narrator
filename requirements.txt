@@ -3,10 +3,13 @@
 # Core utilities
 numpy>=1.26
 pandas>=2.2
-matplotlib
 torch>=2.0
-transformers # to make use of GPT2
+transformers
 pyyaml
+
+# notebook stats
+matplotlib
+nltk
 
 # for fetching datasets from Hugging Face Hub
 huggingface_hub>=0.24

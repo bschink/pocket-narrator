@@ -1,4 +1,4 @@
-run_name: "transformer_char_tinystories_30k"
+run_name: "transformer_bpe_tinystories_30k"
 
 data:
   path: "data/processed/TinyStories/TinyStories-train.bos_eos_30k.txt"
