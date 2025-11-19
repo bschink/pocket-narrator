@@ -99,6 +99,10 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         
         predictions = []
         for prompt_tokens in input_tokens_batch:
+            if not prompt_tokens:
+                predictions.append([])
+                continue # skip empty prompts
+
             idx = torch.tensor(prompt_tokens, dtype=torch.long, device=device).unsqueeze(0)
             
             for _ in range(max_length):

@@ -35,50 +35,50 @@ To achieve this, we will implement language models from scratch using PyTorch. T
 pocket-narrator/
 ├── README.md
 ├── requirements.txt
-├── configs/                                  # Configuration files for experiments
+├── configs/                             # Configuration files for experiments
 │   └── …
-├── data/                                     # Raw and processed datasets
+├── data/                                # Raw and processed datasets
 │   └── …
-├── models/                                   # Saved model checkpoints
+├── models/                              # Saved model checkpoints
 │   └── …
-├── notebooks/                                # Exploratory data analysis and experimentation
+├── notebooks/                           # Exploratory data analysis and experimentation
 │   └── …
-├── pocket_narrator/                          # Source code for the PocketNarrator package
+├── pocket_narrator/                     # Source code for the PocketNarrator package
 │   ├── __init__.py
-│   ├── models                                # The core model architectures
-│   │   ├── __init__.py                       # factory methods for getting & loading a model instance
-│   │   ├── components                        # components needed for different architectures
+│   ├── models                           # The core model architectures
+│   │   ├── __init__.py                  # factory methods for getting & loading a model instance
+│   │   ├── components                   # components needed for different architectures
 │   │   │   ├── __init__.py      
-│   │   │   ├── base_pos_encoding.py          # abstract base class for positional encodings
-│   │   │   └── positional_encoding.py        # sinusoidal & rotary positional encoding
-│   │   ├── transformers                      # decoder-only transformer architecture
+│   │   │   ├── base_pos_encoding.py     # abstract base class for positional encodings
+│   │   │   └── positional_encoding.py   # sinusoidal & rotary positional encoding
+│   │   ├── transformers                 # decoder-only transformer architecture
 │   │   │   ├── __init__.py      
-│   │   │   ├── attention.py                  # multihead self-attention
-│   │   │   ├── base_attention.py             # abstract base class for attention mechanisms
-│   │   │   ├── model.py                      # creating transformer models
-│   │   │   └── transformer_block.py          # creating transformer blocks
-│   │   ├── base_model.py                     # abstract base class for language models
-│   │   └── ngram_model.py                    # n-gram model
-│   ├── tokenizers                            # multiple different tokenizers
-│   │   ├── __init__.py                       # factory method for getting a tokenizer instance
-│   │   ├── base_tokenizer.py                 # abstract base class for tokenizers
-│   │   ├── bpe_tokenizer.py                  # bpe tokenizer
-│   │   └── character_tokenizer.py            # character-level tokenizer
-│   ├── trainers                              # multiple different trainers for the different models
-│   │   ├── __init__.py                       # factory method for getting a trainer instance
-│   │   ├── base_trainer.py                   # abstract base class for trainers
-│   │   ├── ngram_trainer.py                  # trainer for n-gram models
-│   │   └── transformer_trainer.py            # trainer for transformer models
-│   ├── data_loader.py                        # Loads and preprocesses data for the model
-│   ├── evaluate.py                           # Functions for evaluating model performance
-├── scripts/                                  # Standalone scripts for execution
-│   ├── train.py                              # Script to train the model
-│   └── generate.py                           # Script to generate text with a trained model
-├── tests/                                    # Unit and integration tests
-│   └── test_*.py                             # Individual test files
-├── tokenizers/                               # saved trained tokenizers
+│   │   │   ├── attention.py             # multihead self-attention
+│   │   │   ├── base_attention.py        # abstract base class for attention mechanisms
+│   │   │   ├── model.py                 # creating transformer models
+│   │   │   └── transformer_block.py     # creating transformer blocks
+│   │   ├── base_model.py                # abstract base class for language models
+│   │   └── ngram_model.py               # n-gram model
+│   ├── tokenizers                       # multiple different tokenizers
+│   │   ├── __init__.py                  # factory method for getting a tokenizer instance
+│   │   ├── base_tokenizer.py            # abstract base class for tokenizers
+│   │   ├── bpe_tokenizer.py             # bpe tokenizer
+│   │   └── character_tokenizer.py       # character-level tokenizer
+│   ├── trainers                         # multiple different trainers for the different models
+│   │   ├── __init__.py                  # factory method for getting a trainer instance
+│   │   ├── base_trainer.py              # abstract base class for trainers
+│   │   ├── ngram_trainer.py             # trainer for n-gram models
+│   │   └── transformer_trainer.py       # trainer for transformer models
+│   ├── data_loader.py                   # Loads and preprocesses data for the model
+│   ├── evaluate.py                      # Functions for evaluating model performance
+├── scripts/                             # Standalone scripts for execution
+│   ├── train.py                         # Script to train the model
+│   └── generate.py                      # Script to generate text with a trained model
+├── tests/                               # Unit and integration tests
+│   └── test_*.py                        # Individual test files
+├── tokenizers/                          # saved trained tokenizers
 │   └── …
-├── wandb/                                    # logging
+├── wandb/                               # logging
 │   └── …
 ```
 

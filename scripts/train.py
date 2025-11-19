@@ -61,8 +61,16 @@ def prepare_batch(batch_text: list[str], tokenizer) -> tuple[list[list[int]], li
 
     for text in batch_text:
         tokens = tokenizer.encode(text)
+
+        if len(tokens) < 2:
+            continue # skip too short sequences
+        
         # split the token sequence in the middle
         split_point = len(tokens) // 2
+
+        if split_point == 0:
+            continue
+
         input_tokens_batch.append(tokens[:split_point])
         target_tokens_batch.append(tokens[split_point:])
     
