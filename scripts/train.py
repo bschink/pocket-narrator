@@ -371,6 +371,9 @@ def main():
 
     print(f"\n--- Training run finished successfully! Model saved to {model_path} ---")
 
+    # Log model local save path to wandb 
+    wandb.summary["model_path"] = model_path
+
     # --- Append metadata to model log to keep track ---
     log_entry = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
