@@ -350,7 +350,8 @@ def main():
         target_tokens=target_tokens_batch,
         predicted_text=predicted_text_batch,
         target_text=target_text_batch,
-        val_loss=val_loss
+        val_loss=val_loss,
+        check_grammar=True
     )
 
     print("\n--- Evaluation Summary ---")

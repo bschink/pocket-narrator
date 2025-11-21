@@ -7,6 +7,13 @@ to support a variety of metrics.
 import re
 import math
 from collections import Counter
+import torch
+
+try:
+    from transformers import pipeline
+    _GRAMMAR_PIPELINE = None
+except ImportError:
+    _GRAMMAR_PIPELINE = None
 
 def _word_tokenize(text: str) -> list[str]:
     """
@@ -221,12 +228,81 @@ def calculate_rouge_n(candidate_text: str, reference_text: str, n: int = 1) -> f
     total_ref_ngrams = sum(ref_ngrams.values())
     return matches / total_ref_ngrams if total_ref_ngrams > 0 else 0.0
 
+
+def _load_grammar_pipeline(device_str: str):
+    """
+    Lazy loader for the DistilBERT CoLA model.
+    """
+    global _GRAMMAR_PIPELINE
+    
+    if _GRAMMAR_PIPELINE is not None:
+        return _GRAMMAR_PIPELINE
+
+    print(f"INFO: Loading DistilBERT-CoLA for grammar evaluation on {device_str}...")
+    
+    try:
+        curr_device = torch.device(device_str)
+        
+        _GRAMMAR_PIPELINE = pipeline(
+            "text-classification", 
+            model="textattack/distilbert-base-uncased-CoLA",
+            device=curr_device, 
+            top_k=None # return scores for both labels
+        )
+    except Exception as e:
+        print(f"ERROR: Could not load grammar pipeline: {e}")
+        return None
+        
+    return _GRAMMAR_PIPELINE
+
+def calculate_grammar_score(texts: list[str], device: str = "cpu") -> float:
+    """
+    Calculates the average 'Linguistic Acceptability' score using DistilBERT-CoLA.
+    Returns a float between 0.0 (Unacceptable) and 1.0 (Grammatically Correct).
+    """
+    try:
+        import transformers
+    except ImportError:
+        print("WARNING: 'transformers' library not found. Skipping grammar check.")
+        return 0.0
+
+    pipe = _load_grammar_pipeline(device)
+    
+    if pipe is None or not texts:
+        return 0.0
+
+    try:
+        results = pipe(texts, batch_size=len(texts), truncation=True, max_length=512)
+    except Exception as e:
+        print(f"WARNING: Grammar evaluation failed: {e}")
+        return 0.0
+
+    total_score = 0.0
+    count = 0
+    
+    for res in results:
+        # res is list of dicts: [{'label': 'LABEL_1', 'score': 0.9}, ...]
+        # CoLA: LABEL_1 = Acceptable, LABEL_0 = Unacceptable
+        
+        score = 0.0
+        for item in res:
+            if item['label'] == 'LABEL_1':
+                score = item['score']
+                break
+        
+        total_score += score
+        count += 1
+
+    return total_score / count if count > 0 else 0.0
+
+
 def run_evaluation(
     predicted_tokens: list[list[int]],
     target_tokens: list[list[int]],
     predicted_text: list[str],
     target_text: list[str],
-    val_loss: float = None
+    val_loss: float = None,
+    check_grammar: bool = True
 ) -> dict:
     """
     Master evaluation function that runs all evaluation metrics and returns a summary dictionary.
@@ -279,5 +355,18 @@ def run_evaluation(
         evaluation_results["rouge_1"] = total_rouge_1 / batch_size
         evaluation_results["rouge_2"] = total_rouge_2 / batch_size
         evaluation_results["rouge_l"] = total_rouge_l / batch_size
+
+    # --- 6. Grammar Score (CoLA)
+    if check_grammar and predicted_text:
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
+            
+        evaluation_results["grammar_score"] = calculate_grammar_score(predicted_text, device=device)
+    else:
+        evaluation_results["grammar_score"] = None
     
     return evaluation_results
