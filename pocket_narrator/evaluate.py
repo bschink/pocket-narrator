@@ -272,7 +272,26 @@ def calculate_grammar_score(texts: list[str], device: str = "cpu") -> float:
         return 0.0
 
     try:
-        results = pipe(texts, batch_size=len(texts), truncation=True, max_length=512)
+        # Use smaller batch size to avoid memory issues
+        batch_size = min(8, len(texts))
+        results = pipe(texts, batch_size=batch_size, truncation=True, max_length=512)
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            print(f"WARNING: GPU out of memory. Retrying on CPU...")
+            global _GRAMMAR_PIPELINE
+            _GRAMMAR_PIPELINE = None  # reset pipeline
+            pipe = _load_grammar_pipeline("cpu")
+            if pipe is None:
+                return 0.0
+            try:
+                batch_size = min(8, len(texts))
+                results = pipe(texts, batch_size=batch_size, truncation=True, max_length=512)
+            except Exception as e2:
+                print(f"WARNING: Grammar evaluation failed on CPU: {e2}")
+                return 0.0
+        else:
+            print(f"WARNING: Grammar evaluation failed: {e}")
+            return 0.0
     except Exception as e:
         print(f"WARNING: Grammar evaluation failed: {e}")
         return 0.0
@@ -313,6 +332,7 @@ def run_evaluation(
         predicted_text: Batch of decoded predicted sentences (list[str]).
         target_text: Batch of decoded target sentences (list[str]).
         val_loss: The Cross Entropy Loss on the validation set.
+        check_grammar: Whether to run the grammar checker.
 
     Returns:
         A dictionary of all calculated evaluation metrics.
@@ -366,6 +386,45 @@ def run_evaluation(
             device = "cpu"
             
         evaluation_results["grammar_score"] = calculate_grammar_score(predicted_text, device=device)
+    else:
+        evaluation_results["grammar_score"] = None
+    
+    return evaluation_results
+
+def run_dataset_evaluation(
+    dataset_text: list[str],
+    check_grammar: bool = True
+) -> dict:
+    """
+    Master evaluation function that runs all applicable evaluation metrics on the dataset.
+
+    Args:
+        dataset_text: List of sentences in the dataset (list[str]).
+        check_grammar: Whether to run the grammar checker.
+
+    Returns:
+        A dictionary of all calculated evaluation metrics.
+    """
+    print("--- Running Dataset Evaluation ---")
+    evaluation_results = {}
+
+    # --- 1. Distinct-n for n=1,2,3
+    for n in (1, 2, 3):
+        evaluation_results[f"distinct_{n}"] = distinct_n(dataset_text, n=n)
+    
+    # --- 2. Repetition rate over generated text
+    evaluation_results["repetition_rate"] = repetition_rate(dataset_text)
+
+    # --- 3. Grammar Score (CoLA)
+    if check_grammar and dataset_text:
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
+            
+        evaluation_results["grammar_score"] = calculate_grammar_score(dataset_text, device=device)
     else:
         evaluation_results["grammar_score"] = None
     
