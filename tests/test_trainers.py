@@ -6,6 +6,8 @@ of the TransformerTrainer class.
 """
 import pytest
 import torch
+import math
+from unittest.mock import MagicMock
 
 from pocket_narrator.trainers import get_trainer
 from pocket_narrator.trainers.base_trainer import AbstractTrainer
@@ -23,7 +25,12 @@ def test_get_trainer_factory_for_ngram():
 
 def test_get_trainer_factory_for_transformer():
     # Arrange
-    trainer_config = {"learning_rate": 1e-5, "epochs": 2}
+    trainer_config = {
+        "learning_rate": 1e-5, 
+        "epochs": 2,
+        "warmup_steps": 50,
+        "weight_decay": 0.01
+    }
     
     # Act
     trainer = get_trainer(trainer_type="transformer", **trainer_config)
@@ -33,6 +40,9 @@ def test_get_trainer_factory_for_transformer():
     assert isinstance(trainer, AbstractTrainer)
     assert trainer.learning_rate == 1e-5
     assert trainer.epochs == 2
+    assert trainer.warmup_steps == 50
+    # Check if scaler is initialized (implies AMP setup logic ran)
+    assert hasattr(trainer, 'scaler')
 
 def test_get_trainer_factory_failure_for_unknown_type():
     with pytest.raises(ValueError, match="Unknown trainer type: 'unknown_type'"):
@@ -42,7 +52,7 @@ def test_get_trainer_factory_failure_for_unknown_type():
 
 @pytest.fixture
 def simple_trainer():
-    return TransformerTrainer(batch_size=2)
+    return TransformerTrainer(batch_size=2, use_amp=False)
 
 def test_transformer_trainer_prepare_batch(simple_trainer):
     """
@@ -74,9 +84,33 @@ def test_transformer_trainer_prepare_batch(simple_trainer):
     assert torch.equal(x[1], expected_x_1)
     assert torch.equal(y[1], expected_y_1)
 
+def test_transformer_trainer_calculate_validation_loss(simple_trainer):
+    """
+    Tests the internal validation loop.
+    """
+    # Arrange
+    model_config = {
+        "d_model": 4, "n_layers": 1, "n_head": 2, "max_len": 5, 
+        "dropout": 0.0, "vocab_size": 10
+    }
+    model = get_model(model_type="transformer", **model_config)
+    
+    tokenizer = MagicMock()
+    tokenizer.encode_batch.return_value = [[1, 2, 3]]
+    
+    val_data = ["a b c"]
+    
+    # Act
+    loss = simple_trainer.calculate_validation_loss(model, tokenizer, val_data)
+    
+    # Assert
+    assert isinstance(loss, float)
+    assert loss > 0.0  # Loss should be non-zero for untrained model
+
 def test_transformer_trainer_train_method_updates_weights():
     """
-    This is an integration test verifying that the model's weights actually change
+    Integration test verifying that the model's weights actually change.
+    Now includes passing val_data to ensure the validation loop inside train works.
     """
     # Arrange
     train_data = ["abcde", "fghij"]
@@ -96,10 +130,15 @@ def test_transformer_trainer_train_method_updates_weights():
     
     initial_weights = model.lm_head.weight.clone().detach()
     
-    trainer = TransformerTrainer(epochs=1, batch_size=2)
+    trainer = TransformerTrainer(epochs=1, batch_size=2, use_amp=False, warmup_steps=0)
     
     # Act
-    trained_model = trainer.train(model=model, tokenizer=tokenizer, train_data=train_data)
+    trained_model = trainer.train(
+        model=model, 
+        tokenizer=tokenizer, 
+        train_data=train_data,
+        val_data=train_data 
+    )
     
     # Assert
     final_weights = trained_model.lm_head.weight

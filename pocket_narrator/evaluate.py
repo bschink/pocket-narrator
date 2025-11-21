@@ -16,6 +16,12 @@ def _word_tokenize(text: str) -> list[str]:
     """
     return re.findall(r"\b\w+\b", text.lower())
 
+def _get_ngrams(tokens: list[str], n: int) -> Counter:
+    """Helper to generate n-grams from a list of tokens."""
+    if len(tokens) < n:
+        return Counter()
+    return Counter(tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1))
+
 
 def _calculate_mvp_accuracy_on_batch(
     predicted_tokens: list[list[int]], 
@@ -103,11 +109,124 @@ def repetition_rate(texts: list[str]) -> float:
     return repeated / total_tokens
 
 
+def calculate_perplexity(loss_value: float) -> float:
+    """
+    Calculates perplexity from the average cross-entropy loss.
+    PPL = exp(Loss)
+    """
+    try:
+        return math.exp(loss_value)
+    except OverflowError:
+        return float('inf')
+    
+def calculate_bleu(candidate_text: str, reference_text: str, max_n: int = 4) -> float:
+    """
+    Calculates a simplified BLEU score (BLEU-1 to BLEU-4).
+    
+    Args:
+        candidate_text: The generated string.
+        reference_text: The ground truth string.
+        max_n: Maximum n-gram order to check (usually 4).
+    """
+    cand_tokens = _word_tokenize(candidate_text)
+    ref_tokens = _word_tokenize(reference_text)
+    
+    if not cand_tokens:
+        return 0.0
+
+    # brevity penalty
+    c = len(cand_tokens)
+    r = len(ref_tokens)
+    if c > r:
+        bp = 1.0
+    else:
+        bp = math.exp(1 - r / c) if c > 0 else 0.0
+
+    # n-gram precision (geometric mean)
+    precisions = []
+    for n in range(1, max_n + 1):
+        cand_ngrams = _get_ngrams(cand_tokens, n)
+        ref_ngrams = _get_ngrams(ref_tokens, n)
+        
+        clipped_counts = {
+            gram: min(count, ref_ngrams.get(gram, 0)) 
+            for gram, count in cand_ngrams.items()
+        }
+        
+        numerator = sum(clipped_counts.values())
+        denominator = max(1, sum(cand_ngrams.values())) # avoid div by 0
+        
+        precisions.append(numerator / denominator)
+
+    if any(p == 0 for p in precisions):
+        return 0.0
+
+    # geometric mean: exp(sum(log(p)) / N)
+    log_sum = sum(math.log(p) for p in precisions)
+    geo_mean = math.exp(log_sum / max_n)
+
+    return bp * geo_mean
+
+def _lcs_length(x: list[str], y: list[str]) -> int:
+    """
+    Computes Longest Common Subsequence length using dynamic programming.
+    """
+    m, n = len(x), len(y)
+    # using 2 rows instead of full matrix to save memory
+    prev = [0] * (n + 1)
+    curr = [0] * (n + 1)
+    
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if x[i-1] == y[j-1]:
+                curr[j] = prev[j-1] + 1
+            else:
+                curr[j] = max(prev[j], curr[j-1])
+        prev = list(curr)
+        
+    return curr[n]
+
+def calculate_rouge_l(candidate_text: str, reference_text: str) -> float:
+    """
+    Calculates ROUGE-L (Recall based on Longest Common Subsequence).
+    """
+    cand_tokens = _word_tokenize(candidate_text)
+    ref_tokens = _word_tokenize(reference_text)
+    
+    if not ref_tokens:
+        return 0.0
+        
+    lcs_len = _lcs_length(cand_tokens, ref_tokens)
+    
+    return lcs_len / len(ref_tokens)
+
+def calculate_rouge_n(candidate_text: str, reference_text: str, n: int = 1) -> float:
+    """
+    Calculates ROUGE-N (N-gram overlap recall).
+    """
+    cand_tokens = _word_tokenize(candidate_text)
+    ref_tokens = _word_tokenize(reference_text)
+    
+    if not ref_tokens:
+        return 0.0
+        
+    cand_ngrams = _get_ngrams(cand_tokens, n)
+    ref_ngrams = _get_ngrams(ref_tokens, n)
+    
+    # intersection count
+    matches = 0
+    for gram, count in ref_ngrams.items():
+        matches += min(count, cand_ngrams.get(gram, 0))
+        
+    total_ref_ngrams = sum(ref_ngrams.values())
+    return matches / total_ref_ngrams if total_ref_ngrams > 0 else 0.0
+
 def run_evaluation(
     predicted_tokens: list[list[int]],
     target_tokens: list[list[int]],
     predicted_text: list[str],
-    target_text: list[str]
+    target_text: list[str],
+    val_loss: float = None
 ) -> dict:
     """
     Master evaluation function that runs all evaluation metrics and returns a summary dictionary.
@@ -117,24 +236,48 @@ def run_evaluation(
         target_tokens: Batch of target token sequences (list[list[int]]).
         predicted_text: Batch of decoded predicted sentences (list[str]).
         target_text: Batch of decoded target sentences (list[str]).
+        val_loss: The Cross Entropy Loss on the validation set.
 
     Returns:
         A dictionary of all calculated evaluation metrics.
     """
     print("--- Running Full Evaluation ---")
-
-    
     # Providing all the evaluation metrics in here:
     evaluation_results = {}
+
+    # --- 1. Perplexity
+    if val_loss is not None:
+        evaluation_results["perplexity"] = calculate_perplexity(val_loss)
+    else:
+        evaluation_results["perplexity"] = None
     
-    # --- 1. MVP Accuracy
+    # --- 2. MVP Accuracy
     evaluation_results["mvp_accuracy"] = _calculate_mvp_accuracy_on_batch(predicted_tokens, target_tokens)
 
-    # --- 2. Distinct-n for n=1,2,3
+    # --- 3. Distinct-n for n=1,2,3
     for n in (1, 2, 3):
         evaluation_results[f"distinct_{n}"] = distinct_n(predicted_text, n=n)
     
-    # --- 3. Repetition rate over generated text
+    # --- 4. Repetition rate over generated text
     evaluation_results["repetition_rate"] = repetition_rate(predicted_text)
+
+    # --- 5. N-gram Overlap Metrics (BLEU & ROUGE)
+    total_bleu = 0.0
+    total_rouge_1 = 0.0
+    total_rouge_2 = 0.0
+    total_rouge_l = 0.0
+    batch_size = len(predicted_text)
+    
+    if batch_size > 0:
+        for pred, ref in zip(predicted_text, target_text):
+            total_bleu += calculate_bleu(pred, ref)
+            total_rouge_1 += calculate_rouge_n(pred, ref, n=1)
+            total_rouge_2 += calculate_rouge_n(pred, ref, n=2)
+            total_rouge_l += calculate_rouge_l(pred, ref)
+            
+        evaluation_results["bleu_4"] = total_bleu / batch_size
+        evaluation_results["rouge_1"] = total_rouge_1 / batch_size
+        evaluation_results["rouge_2"] = total_rouge_2 / batch_size
+        evaluation_results["rouge_l"] = total_rouge_l / batch_size
     
     return evaluation_results

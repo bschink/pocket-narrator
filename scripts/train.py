@@ -107,7 +107,7 @@ def main():
     parser.add_argument(
         "--tokenizer_config",
         type=json.loads,
-        default='{"vocab_size": 1024, "special_tokens": ["<bos>", "<eos>"], "merges_per_round": 200}',
+        default='{"vocab_size": 1024, "special_tokens": ["<bos>", "<eos>", "<pad>"], "merges_per_round": 200}',
         help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').',
     )
     parser.add_argument(
@@ -293,7 +293,12 @@ def main():
 
     # --- Training ---
     print("\n--- Starting Model Training ---")
-    model = trainer.train(model=model, tokenizer=tokenizer, train_data=train_lines)
+    model = trainer.train(
+        model=model, 
+        tokenizer=tokenizer, 
+        train_data=train_lines,
+        val_data=val_lines,
+    )
     print("Model training complete.")
 
     # --- Validation ---
@@ -301,6 +306,11 @@ def main():
     val_batch_iterator = batchify_text(val_lines, batch_size=batch_size, shuffle=False)
     val_batch_text = next(val_batch_iterator)
     val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
+
+    if trainer_type == "transformer":
+         val_loss = trainer.calculate_validation_loss(model, tokenizer, val_lines)
+    else:
+         val_loss = None # NGram doesn't support this  
 
     # --- DEBUG: check vocab sizes and token ranges ---
     print("DEBUG: tokenizer vocab_size:", tokenizer.get_vocab_size())
@@ -340,6 +350,7 @@ def main():
         target_tokens=target_tokens_batch,
         predicted_text=predicted_text_batch,
         target_text=target_text_batch,
+        val_loss=val_loss
     )
 
     print("\n--- Evaluation Summary ---")
