@@ -30,3 +30,6 @@ pytest-mock
 
 # logging
 wandb
+
+# mamba implementation
+mamba_ssm

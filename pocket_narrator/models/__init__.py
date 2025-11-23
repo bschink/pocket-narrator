@@ -13,19 +13,46 @@ from .ngram_model import NGramModel
 def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageModel:
     """
     Factory function to get a model instance.
+
+    Supported model types:
+      - "ngram"
+      - "transformer"
+      - "hf_tinystories"
+      - "mamba" (not fully functional yet)
     """
     print(f"INFO: Getting model of type '{model_type}'...")
+
     if model_type == "ngram":
         return NGramModel(
-            vocab_size=vocab_size, 
-            n=kwargs.get('n'), 
+            vocab_size=vocab_size,
+            n=kwargs.get('n'),
             eos_token_id=kwargs.get('eos_token_id')
         )
     elif model_type == "transformer":
-        from .transformers.model import TransformerModel 
+        from .transformers.model import TransformerModel
         return TransformerModel.from_config(vocab_size=vocab_size, **kwargs)
+    elif model_type == "hf_tinystories":
+        from .hf_tinystories import HuggingFaceTinyStoriesLM
+        
+        hf_model_name = kwargs.get("hf_model_name", "roneneldan/TinyStories-28M")
+        
+        return HuggingFaceTinyStoriesLM(
+            model_name=hf_model_name,
+            device=kwargs.get("device", None)
+        )
+    elif model_type == "mamba":
+        from .mamba_model import MambaLanguageModel
+        return MambaLanguageModel(
+            vocab_size=vocab_size,
+            eos_token_id=kwargs.get("eos_token_id"),
+            d_model=kwargs.get("d_model", 256),
+            n_layers=kwargs.get("n_layers", 4),
+            device=kwargs.get("device", None),
+        )
+
     else:
         raise ValueError(f"Unknown model type: '{model_type}'")
+    
 
 def load_model(model_path: str) -> AbstractLanguageModel:
     """
@@ -64,7 +91,6 @@ def load_model(model_path: str) -> AbstractLanguageModel:
         state_dict = save_dict['state_dict']
         
         model = get_model(**config)
-
         model.load_state_dict(state_dict)
         return model
         
