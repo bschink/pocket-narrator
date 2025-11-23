@@ -144,6 +144,14 @@ def main():
             "If not given, a name based on model type and timestamp will be used."
         ),
     )
+    parser.add_argument(
+        "--use_cache",
+        action="store_true",
+        default=True, 
+        help="Use KV-Caching for validation generation (default: True). Set --no-cache to disable."
+    )
+    parser.add_argument('--no-cache', dest='use_cache', action='store_false')
+    parser.set_defaults(use_cache=True)
     args = parser.parse_args()
 
     # ---- Local runtime config (start from defaults / CLI, then override with YAML) ----
@@ -337,6 +345,7 @@ def main():
         val_inputs,
         strategy=generation_strategy,
         no_repeat_ngram_size=no_repeat_ngram_size,
+        use_cache=args.use_cache
     )
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     target_text_batch = tokenizer.decode_batch(target_tokens_batch)

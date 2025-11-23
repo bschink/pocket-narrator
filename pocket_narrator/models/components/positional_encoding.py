@@ -21,12 +21,16 @@ class SinusoidalPositionalEncoding(AbstractPositionalEncoding):
         
         self.register_buffer('pe', pe.unsqueeze(0))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """
         Adds positional encoding to the input tensor.
         x shape: (batch_size, seq_len, d_model)
+        offset: The starting position index (used for KV-Caching inference)
         """
-        x = x + self.pe[:, :x.size(1), :]
+        seq_len = x.size(1)
+        pe_slice = self.pe[:, offset : offset + seq_len, :]
+        
+        x = x + pe_slice
         return self.dropout(x)
     
 class RotaryPositionalEncoding(AbstractPositionalEncoding):
@@ -59,13 +63,14 @@ class RotaryPositionalEncoding(AbstractPositionalEncoding):
         # shape: (1, max_len, 1, d_model / 2)
         self.register_buffer('freqs_complex', freqs_complex.unsqueeze(0).unsqueeze(2))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """
         Applies the rotary rotation to the input tensor.
 
         Args:
             x (torch.Tensor): Input tensor (Query or Key) of shape 
                               (batch, n_head, seq_len, d_k).
+            offset: The starting position index.
         
         Returns:
             torch.Tensor: Rotated tensor of the same shape.
@@ -77,13 +82,16 @@ class RotaryPositionalEncoding(AbstractPositionalEncoding):
         # shape: (batch, n_head, seq_len, d_k/2)
         x_complex = torch.view_as_complex(x_reshaped)
         
-        # get frequencies for current sequence length
-        # shape: (1, seq_len, 1, d_k/2)
-        freqs = self.freqs_complex[:, :x.shape[2], :, :]
+        seq_len = x.shape[2]
+        # Slice frequencies from 'offset' to 'offset + seq_len'
+        # shape of freqs_complex buffer: (1, max_len, 1, d_k/2)
+        # After slicing: (1, seq_len, 1, d_k/2)
+        # Transpose to: (1, 1, seq_len, d_k/2)
+        freqs = self.freqs_complex[:, offset : offset + seq_len, :, :].transpose(1, 2)
         
         # perform the rotation via element-wise complex multiplication
         # shape of x_complex: (batch, n_head, seq_len, d_k/2)
-        # shape of freqs:     (1,      seq_len, 1,      d_k/2)
+        # shape of freqs:     (1,     1,      seq_len, d_k/2)
         x_rotated_complex = x_complex * freqs
 
         # convert back to a real tensor.

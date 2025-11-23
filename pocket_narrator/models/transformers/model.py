@@ -5,6 +5,8 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional, List, Tuple
+
 from ..base_model import AbstractLanguageModel
 from ..components.positional_encoding import SinusoidalPositionalEncoding, RotaryPositionalEncoding
 from .attention import MultiHeadSelfAttention
@@ -17,8 +19,6 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         nn.Module.__init__(self)
 
         self.config = config
-
-        # architecture is assembled
         self.token_embedding = nn.Embedding(vocab_size, config['d_model'])
         self.pos_encoding = pos_encoding_module
         self.blocks = blocks
@@ -46,7 +46,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         if pos_encoding_type == "sinusoidal":
             additive_pos_encoding = SinusoidalPositionalEncoding(d_model, max_len, dropout)
         elif pos_encoding_type == "rope":
-            assert (d_model // n_head) % 2 == 0, "For RoPE, head dimension (d_model/n_head) must be even."
+            assert (d_model // n_head) % 2 == 0, "head dim must be even for RoPE"
             rotary_pos_encoding = RotaryPositionalEncoding(d_model // n_head, max_len)
         else:
             raise ValueError(f"Unknown pos_encoding_type: {pos_encoding_type}")
@@ -66,71 +66,116 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
             "model_type": "transformer", "vocab_size": vocab_size, "d_model": d_model,
             "n_layers": n_layers, "n_head": n_head, "max_len": max_len, "dropout": dropout,
             "pos_encoding_type": pos_encoding_type, "attention_type": attention_type,
+            "eos_token_id": kwargs.get("eos_token_id")
         }
         
         return cls(vocab_size, blocks, config, pos_encoding_module=additive_pos_encoding)
 
-    def forward(self, idx: torch.Tensor, mask: torch.Tensor = None):
-        """The forward pass of the model."""
+    def forward(self, 
+                idx: torch.Tensor, 
+                mask: torch.Tensor = None,
+                past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None,
+                use_cache: bool = False):
+        """
+        Args:
+            idx: Input tokens. Shape (B, L).
+            mask: Attention mask.
+            past_key_values: List of (K, V) tuples from previous step.
+            use_cache: If True, returns new key_values. If False, returns None for KV.
+        """
         x = self.token_embedding(idx)
         if self.pos_encoding is not None:
-            x = self.pos_encoding(x)
+            offset = past_key_values[0][0].size(2) if past_key_values is not None else 0
+            x = self.pos_encoding(x, offset=offset)
+
+        present_key_values = [] if use_cache else None
+    
+        for i, block in enumerate(self.blocks):
+            layer_past = past_key_values[i] if past_key_values is not None else None
             
-        for block in self.blocks:
-            x = block(x, mask=mask)
+            x, layer_present = block(x, mask=mask, layer_past=layer_past)
+            
+            if use_cache:
+                present_key_values.append(layer_present)
+
         x = self.ln_f(x)
         logits = self.lm_head(x)
-        return logits
+        
+        return logits, present_key_values
 
     @torch.no_grad()
     def predict_sequence_batch(self, input_tokens_batch: list[list[int]], **kwargs) -> list[list[int]]:
         """
-        Generates a sequence continuation for each prompt in the batch using
-        autoregressive decoding.
+        Generates a sequence continuation for each prompt in the batch.
         """
         was_training = self.training
         self.eval()
         
-        max_length = kwargs.get("max_length", 50)
+        max_new_tokens = kwargs.get("max_length", 50)
         strategy = kwargs.get("strategy", "greedy")
+        use_cache = kwargs.get("use_cache", False)
         eos_token_id = self.config.get("eos_token_id")
-
         device = next(self.parameters()).device
+        max_context_len = self.config['max_len']
         
-        predictions = []
+        results = []
+
         for prompt_tokens in input_tokens_batch:
             if not prompt_tokens:
-                predictions.append([])
-                continue # skip empty prompts
-
-            idx = torch.tensor(prompt_tokens, dtype=torch.long, device=device).unsqueeze(0)
+                results.append([])
+                continue
             
-            for _ in range(max_length):
-                idx_cond = idx[:, -self.config['max_len']:]
+            generated = list(prompt_tokens)
+            
+            # with kv caching
+            if use_cache:
+                # prefill
+                ctx_tokens = generated[-max_context_len:]
+                idx = torch.tensor([ctx_tokens], dtype=torch.long, device=device)
                 
-                logits = self(idx_cond)
+                logits, past_key_values = self.forward(idx, use_cache=True)
+                next_token_logits = logits[:, -1, :]
                 
-                logits = logits[:, -1, :] # (1, vocab_size)
-                
-                # generation strategy
-                if strategy == "sample":
-                    probs = F.softmax(logits, dim=-1)
-                    idx_next = torch.multinomial(probs, num_samples=1)
-                else: # default to greedy
-                    idx_next = torch.argmax(logits, dim=-1, keepdim=True)
-                
-                idx = torch.cat((idx, idx_next), dim=1)
-                
-                if eos_token_id is not None and idx_next.item() == eos_token_id:
-                    break
+                for _ in range(max_new_tokens):
+                    idx_next = self._sample_token(next_token_logits, strategy)
+                    
+                    token_int = idx_next.item()
+                    generated.append(token_int)
+                    if eos_token_id is not None and token_int == eos_token_id: break
+                    if len(generated) >= max_context_len: break
 
-            generated_list = idx.squeeze(0).tolist()
-            predictions.append(generated_list[len(prompt_tokens):])
-        
+                    logits, past_key_values = self.forward(idx_next, past_key_values=past_key_values, use_cache=True)
+                    next_token_logits = logits[:, -1, :]
+
+            # without kv caching
+            else:
+                for _ in range(max_new_tokens):
+                    ctx_tokens = generated[-max_context_len:]
+                    idx = torch.tensor([ctx_tokens], dtype=torch.long, device=device)
+                    
+                    logits, _ = self.forward(idx, use_cache=False)
+                    next_token_logits = logits[:, -1, :]
+                    
+                    idx_next = self._sample_token(next_token_logits, strategy)
+                    
+                    token_int = idx_next.item()
+                    generated.append(token_int)
+                    if eos_token_id is not None and token_int == eos_token_id: break
+
+            results.append(generated[len(prompt_tokens):])
+
         if was_training:
             self.train()
             
-        return predictions
+        return results
+
+    def _sample_token(self, logits, strategy):
+        """Helper for sampling strategy"""
+        if strategy == "sample":
+            probs = F.softmax(logits, dim=-1)
+            return torch.multinomial(probs, num_samples=1)
+        else:
+            return torch.argmax(logits, dim=-1, keepdim=True)
 
     def save(self, model_path: str):
         """

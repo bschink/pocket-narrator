@@ -121,7 +121,7 @@ class TransformerTrainer(AbstractTrainer):
             if x is None: continue
 
             with torch.autocast(device_type=self.device, dtype=torch.float16, enabled=self.use_amp):
-                logits = model(x, mask=causal_mask)
+                logits, _ = model(x, mask=causal_mask, use_cache=False)
                 loss_sum = loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
             
             num_valid_tokens = (y.view(-1) != 0).sum().item()
@@ -175,7 +175,7 @@ class TransformerTrainer(AbstractTrainer):
                 
                 # forward pass
                 with torch.autocast(device_type=self.device, dtype=torch.float16, enabled=self.use_amp):
-                    logits = model(x, mask=causal_mask)
+                    logits, _ = model(x, mask=causal_mask, use_cache=False)
                     # CrossEntropyLoss expects (N, C) and (N), so we reshape
                     loss = loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
                 

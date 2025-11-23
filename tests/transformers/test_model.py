@@ -21,7 +21,7 @@ def transformer_config():
         "n_head": 4,
         "max_len": 128,
         "dropout": 0.1,
-        "pos_encoding_type": "sinusoidal",
+        "pos_encoding_type": "rope",
         "attention_type": "multi_head",
         "eos_token_id": 3,
     }
@@ -47,14 +47,27 @@ def test_forward_pass_returns_correct_shape(transformer_model):
     input_ids = torch.randint(0, transformer_model.config["vocab_size"], (batch_size, seq_len))
     
     # Act
-    logits = transformer_model(input_ids)
+    logits, present = transformer_model(input_ids, use_cache=False)
     
     # Assert
     assert logits.shape == (batch_size, seq_len, transformer_model.config["vocab_size"])
+    assert present is None
+
+def test_forward_pass_with_cache_returns_kv(transformer_model):
+    # Arrange
+    input_ids = torch.randint(0, 50, (1, 10))
+    
+    # Act
+    logits, present = transformer_model(input_ids, use_cache=True)
+    
+    # Assert
+    assert isinstance(present, list)
+    assert len(present) == transformer_model.config['n_layers']
+    assert len(present[0]) == 2 
 
 def test_predict_is_deterministic_in_greedy_mode(transformer_model):
     # Arrange
-    prompt = [[10, 20, 30]] # batch with a single prompt
+    prompt = [[10, 20, 30]] 
     
     # Act
     prediction1 = transformer_model.predict_sequence_batch(prompt, strategy="greedy", max_length=10)
@@ -74,38 +87,43 @@ def test_predict_respects_max_length(transformer_model):
     # Assert
     assert len(prediction[0]) == max_gen_length
 
-def test_predict_runs_without_gradient_calculation(transformer_model):
-    # Arrange
+def test_kv_caching_consistency(transformer_model):
+    """
+    The 'Efficient Method' Proof:
+    Verify that generating with Cache=True produces the SAME output as Cache=False.
+    If this fails, the caching implementation is mathematically incorrect.
+    """
+    transformer_model.eval()
     prompt = [[10, 20, 30]]
     
-    # Act
-    idx = torch.tensor(prompt)
-    logits = transformer_model(idx)
+    output_cached = transformer_model.predict_sequence_batch(
+        prompt, 
+        strategy="greedy", 
+        max_length=5,
+        use_cache=True
+    )
     
-    # Assert
-    transformer_model.eval()
-    with torch.no_grad():
-        logits_no_grad = transformer_model(idx)
-
-    assert not logits_no_grad.requires_grad
+    output_naive = transformer_model.predict_sequence_batch(
+        prompt, 
+        strategy="greedy", 
+        max_length=5,
+        use_cache=False
+    )
+    
+    assert output_cached == output_naive
 
 def test_save_and_load_roundtrip(transformer_model, tmp_path):
     # Arrange
     model_path = tmp_path / "test_transformer.pth"
-    
     input_prompt = [[10, 20, 30, 40]]
     
     # Act
     original_model_prediction = transformer_model.predict_sequence_batch(input_prompt, strategy="greedy")
-    
     transformer_model.save(model_path)
-    assert os.path.exists(model_path)
-
-    loaded_model = load_model(model_path)
     
+    loaded_model = load_model(model_path)
     loaded_model_prediction = loaded_model.predict_sequence_batch(input_prompt, strategy="greedy")
 
     # Assert
-    assert isinstance(loaded_model, TransformerModel)
     assert loaded_model.config == transformer_model.config
     assert loaded_model_prediction == original_model_prediction

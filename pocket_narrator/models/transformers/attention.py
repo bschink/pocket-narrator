@@ -4,6 +4,7 @@ Contains concrete implementations of attention mechanisms.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional, Tuple
 from .base_attention import AbstractAttention
 from ..components.base_pos_encoding import AbstractPositionalEncoding
 
@@ -21,7 +22,11 @@ class MultiHeadSelfAttention(AbstractAttention):
 
         self.pos_encoding = pos_encoding_module
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+    def forward(self, 
+                x: torch.Tensor, 
+                mask: torch.Tensor = None,
+                layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+                ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         batch_size, seq_len, d_model = x.shape
         
         # project to Q, K, V and reshape for multi-head
@@ -32,12 +37,25 @@ class MultiHeadSelfAttention(AbstractAttention):
 
         # apply RoPE if it exists
         if self.pos_encoding is not None:
-            q = self.pos_encoding(q)
-            k = self.pos_encoding(k)
+            offset = layer_past[0].size(2) if layer_past is not None else 0
+            q = self.pos_encoding(q, offset=offset)
+            k = self.pos_encoding(k, offset=offset)
+
+        # KV caching logic
+        if layer_past is not None:
+            past_k, past_v = layer_past
+            k = torch.cat([past_k, k], dim=2)
+            v = torch.cat([past_v, v], dim=2)
+        present = (k, v)
         
         # apply scaled dot-product attention: softmax(QK^T / sqrt(d_k)) @ V
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=self.dropout.p if self.training else 0.0)
+        y = F.scaled_dot_product_attention(
+            q, k, v, 
+            attn_mask=mask, 
+            dropout_p=self.dropout.p if self.training else 0.0,
+            is_causal=False # handle causal masking manually or it's implicit in inference
+        )
         
         # concatenate heads and project back to d_model
         y = y.transpose(1, 2).contiguous().view(batch_size, seq_len, d_model)
-        return self.out_proj(y)
+        return self.out_proj(y), present

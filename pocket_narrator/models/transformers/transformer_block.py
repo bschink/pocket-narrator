@@ -1,7 +1,9 @@
 """
 Implements a single, decoder-only Transformer block.
 """
+import torch
 import torch.nn as nn
+from typing import Optional, Tuple
 from .base_attention import AbstractAttention
 
 class TransformerBlock(nn.Module):
@@ -17,8 +19,14 @@ class TransformerBlock(nn.Module):
         )
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, mask=None):
-        # using Pre-LayerNorm architecture for better training stability
-        x = x + self.dropout(self.attn(self.ln_1(x), mask=mask))
+    def forward(self, x, mask=None, 
+                layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None):
+        # using Pre-LayerNorm architecture for better training stability  
+        # Attention Sub-layer
+        attn_out, present = self.attn(self.ln_1(x), mask=mask, layer_past=layer_past)
+        x = x + self.dropout(attn_out)
+        
+        # Feed-Forward Sub-layer
         x = x + self.dropout(self.ffn(self.ln_2(x)))
-        return x
+        
+        return x, present
