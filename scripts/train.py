@@ -6,7 +6,10 @@ into a functional end-to-end pipeline.
 
 
 PYTHONPATH=. python3 scripts/train.py \
-  --config configs/transformer_bpe_30ktinystories.yaml 
+  --config configs/ngram_bpe_GPT4_clean_quartered.yaml 
+
+PYTHONPATH=. python3 scripts/train.py \
+  --config configs/transformer_bpe_GPT4_clean_quartered.yaml 
 
   
   PYTHONPATH=. python3 scripts/train.py \
@@ -212,40 +215,50 @@ def main():
         model_name = cfg["saving"]["model_name"]
 
     # --- Initialize Weights & Biases (W&B) run ---
+    run_name = None
     if args.config is not None and cfg is not None:
         run_name = cfg.get("run_name", None)
-    else:
-        run_name = None
 
     if run_name is None:
-        # fallback if no run_name in YAML
         run_name = f"{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+    # Base wandb config (static)
     wandb_config = {
         "run_name": run_name,
         "config_file": args.config,
-        "data_path": data_path,
-        "val_ratio": val_ratio,
-        "random_seed": random_seed,
-        "batch_size": batch_size,
-        "tokenizer_type": tokenizer_type,
-        "tokenizer_path": tokenizer_path,
-        "model_type": model_type,
-        "model_config": model_config,
-        "trainer_type": trainer_type,
-        "generation_strategy": generation_strategy,
-        "no_repeat_ngram_size": no_repeat_ngram_size,
-        "model_dir": model_dir,
-        "model_name": model_name,
+        "seed": random_seed,
+
+        # data
+        "data/path": data_path,
+        "data/val_ratio": val_ratio,
+        "data/batch_size": batch_size,
+
+        # tokenizer
+        "tokenizer/type": tokenizer_type,
+        "tokenizer/path": tokenizer_path,
+
+        # model
+        "model/type": model_type,
+
+        # trainer
+        "trainer/type": trainer_type,
+
+        # generation
+        "generation/strategy": generation_strategy,
+        "generation/no_repeat_ngram": no_repeat_ngram_size,
+        "generation/use_cache": getattr(args, "use_cache", False),
+
+        # saving
+        "saving/model_dir": model_dir,
+        "saving/model_name": model_name,
     }
 
     wandb.init(
-    entity="once-upon-a-prompt",
-    project="pocket-narrator",
-    name=run_name,
-    config=wandb_config,
+        entity="once-upon-a-prompt",
+        project="pocket-narrator",
+        name=run_name,
+        config=wandb_config,
     )
-
 
     print(f"--- Starting Training Run for {model_type} Model ---")
 
@@ -299,14 +312,60 @@ def main():
     )
     trainer = get_trainer(trainer_type=trainer_type)
 
+    # --- Append the wandb.config with architecture/tokenizer/trainer metadata ---
+    extra_cfg = {}
+
+    # tokenizer info
+    try:
+        extra_cfg["tokenizer.path"] = tokenizer_path
+        extra_cfg["tokenizer/vocab_size"] = tokenizer.get_vocab_size()
+        extra_cfg["tokenizer/special_tokens"] = getattr(tokenizer, "special_token_names", None)
+        extra_cfg["model.n"] = model_config.get("n", None)
+        extra_cfg["trainer.lr_schedule"] = "cosine_with_warmup"
+        extra_cfg["device"] = model.device
+
+
+
+    except Exception:
+        pass
+
+    # model architecture (Transformer / Mamba / Ngram)
+    if hasattr(model, "config") and isinstance(model.config, dict):
+        for k, v in model.config.items():
+            extra_cfg[f"model/{k}"] = v
+
+    # number of parameters
+    try:
+        num_params = sum(p.numel() for p in model.parameters())
+        extra_cfg["model/num_parameters"] = num_params
+    except Exception:
+        pass
+
+    # trainer hyperparameters
+    trainer_fields = [
+        "learning_rate", "epochs", "batch_size",
+        "weight_decay", "grad_clip", "warmup_steps",
+        "use_amp", "device", "kv_caching_enabled"
+    ]
+    for attr in trainer_fields:
+        if hasattr(trainer, attr):
+            extra_cfg[f"trainer/{attr}"] = getattr(trainer, attr)
+    
+    # Add scheduler details
+    extra_cfg["trainer/scheduler_type"] = "cosine_with_warmup"
+    extra_cfg["trainer/scheduler_warmup_steps"] = trainer.warmup_steps
+
+    # update wandb config
+    wandb.config.update(extra_cfg, allow_val_change=True)
+
+
     # --- Training ---
     print("\n--- Starting Model Training ---")
-    model = trainer.train(
-        model=model, 
-        tokenizer=tokenizer, 
-        train_data=train_lines,
-        val_data=val_lines,
-    )
+    if trainer_type == "ngram":
+        model = trainer.train(model=model, tokenizer=tokenizer, train_data=train_lines)
+    else:
+        model = trainer.train(model=model, tokenizer=tokenizer,
+                            train_data=train_lines, val_data=val_lines)
     print("Model training complete.")
 
     # --- Validation ---
@@ -316,9 +375,10 @@ def main():
     val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
 
     if trainer_type == "transformer":
-         val_loss = trainer.calculate_validation_loss(model, tokenizer, val_lines)
+        val_loss = trainer.calculate_validation_loss(model, tokenizer, val_lines)
     else:
-         val_loss = None # NGram doesn't support this  
+        val_loss = None # NGram doesn't support this  
+
 
     # --- DEBUG: check vocab sizes and token ranges ---
     print("DEBUG: tokenizer vocab_size:", tokenizer.get_vocab_size())
@@ -341,14 +401,27 @@ def main():
         print("DEBUG: val_inputs is empty!")
 
 
+    predict_kwargs = {
+        "strategy": generation_strategy,
+        "no_repeat_ngram_size": no_repeat_ngram_size,
+    }
+    if model_type == "transformer":
+        predict_kwargs["use_cache"] = args.use_cache
+
     predicted_tokens_batch = model.predict_sequence_batch(
         val_inputs,
-        strategy=generation_strategy,
-        no_repeat_ngram_size=no_repeat_ngram_size,
-        use_cache=args.use_cache
+        **predict_kwargs
     )
+
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     target_text_batch = tokenizer.decode_batch(target_tokens_batch)
+
+    # --- Log generation samples to W&B ---
+    wandb.log({
+        "samples/input": tokenizer.decode(val_inputs[0]),
+        "samples/prediction": predicted_text_batch[0],
+        "samples/ground_truth": target_text_batch[0],
+    })
 
     print(f"Validation Input: '{tokenizer.decode(val_inputs[0])}'")
     print(f"Model Prediction: '{predicted_text_batch[0]}'")
@@ -365,16 +438,18 @@ def main():
 
     print("\n--- Evaluation Summary ---")
     for metric, value in evaluation_summary.items():
-        print(f"{metric}: {value:.4f}")
+        if value is None:
+            print(f"{metric}: None")
+        else:
+            print(f"{metric}: {value:.4f}")
+
     
     # --- Log evaluation metrics to W&B ---
     wandb_metrics = {f"eval/{metric}": value for metric, value in evaluation_summary.items()}
-    # we can add other things to log later here
     wandb_metrics["data/train_size"] = len(train_lines)
     wandb_metrics["data/val_size"] = len(val_lines)
 
     wandb.log(wandb_metrics)
-
 
     # --- Determine model save path ---
     os.makedirs(model_dir, exist_ok=True)
@@ -400,8 +475,29 @@ def main():
 
     print(f"\n--- Training run finished successfully! Model saved to {model_path} ---")
 
-    # Log model local save path to wandb 
+    # --- Final W&B summary entries ---
+    wandb.summary["model_filename"] = model_filename
     wandb.summary["model_path"] = model_path
+    wandb.summary["train/num_samples"] = len(train_lines)
+    wandb.summary["val/num_samples"] = len(val_lines)
+    wandb.summary["finished_at"] = datetime.now().isoformat(timespec="seconds")
+
+    # --- Log model artifacts ---
+    wandb.save(model_path)
+
+    # optionally save tokenizer directory as artifact
+    try:
+        tokenizer_artifact = wandb.Artifact(
+            name=f"tokenizer-{run_name}",
+            type="tokenizer",
+            metadata={"tokenizer_type": tokenizer_type}
+        )
+        tokenizer_artifact.add_dir(tokenizer_path)
+        wandb.run.log_artifact(tokenizer_artifact)
+    except Exception:
+        pass
+
+
 
     # --- Append metadata to model log to keep track ---
     log_entry = {

@@ -3,9 +3,13 @@ Contains the training logic specific to the TransformerModel.
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import math
+import wandb
 from tqdm import tqdm
 from typing import List, Optional
+from contextlib import nullcontext
+import time
 from .base_trainer import AbstractTrainer
 from ..models.base_model import AbstractLanguageModel
 from ..data_loader import batchify_text
@@ -19,7 +23,8 @@ class TransformerTrainer(AbstractTrainer):
                  weight_decay: float = 0.1,
                  grad_clip: float = 1.0,
                  warmup_steps: int = 100,
-                 use_amp: bool = True):
+                 use_amp: bool = True,
+                 kv_caching_enabled: bool = False):
         """
         Initializes the Transformer Trainer with its configuration.
         
@@ -31,6 +36,7 @@ class TransformerTrainer(AbstractTrainer):
             grad_clip (float): Maximum gradient norm for gradient clipping.
             warmup_steps (int): Number of warmup steps for learning rate scheduling.
             use_amp (bool): Whether to use automatic mixed precision for training.
+            kv_caching_enabled (bool): Whether KV caching is enabled during generation.
         """
         super().__init__()
         self.learning_rate = learning_rate
@@ -39,12 +45,21 @@ class TransformerTrainer(AbstractTrainer):
         self.weight_decay = weight_decay
         self.grad_clip = grad_clip
         self.warmup_steps = warmup_steps
+        self.kv_caching_enabled = kv_caching_enabled
         self.device = self._get_device()
         # AMP is only supported on CUDA
         self.use_amp = use_amp and self.device == "cuda"
-        # GradScaler requires "cuda" or "cpu" device_type (not "mps")
-        scaler_device = "cuda" if self.use_amp else "cpu"
-        self.scaler = torch.amp.GradScaler(scaler_device, enabled=self.use_amp)
+
+        # padding index used in batches
+        self.pad_token_id = 0
+
+        # Only create a GradScaler when we are actually using AMP on CUDA.
+        if self.use_amp:
+            from torch.cuda.amp import GradScaler
+            self.scaler = GradScaler()
+        else:
+            self.scaler = None
+        
 
     def _get_device(self) -> str:
         """Automatically select a device to run on."""
@@ -120,7 +135,13 @@ class TransformerTrainer(AbstractTrainer):
             
             if x is None: continue
 
-            with torch.autocast(device_type=self.device, dtype=torch.float16, enabled=self.use_amp):
+            # MPS doesn't support float16 autocast, so use no-op context for MPS
+            if self.use_amp and self.device == "cuda":
+                amp_ctx = torch.autocast(device_type="cuda", dtype=torch.float16)
+            else:
+                amp_ctx = nullcontext()
+
+            with amp_ctx:
                 logits, _ = model(x, mask=causal_mask, use_cache=False)
                 loss_sum = loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
             
@@ -132,6 +153,50 @@ class TransformerTrainer(AbstractTrainer):
         
         if total_tokens == 0: return float('inf')
         return total_nll / total_tokens
+    
+    def compute_batch_loss(self, model, tokenizer, train_data: List[str]) -> torch.Tensor:
+        """
+        Sample one random batch from train_data and compute cross-entropy loss.
+        """
+        max_len = model.config["max_len"]
+
+        # get a random batch of text
+        batch_iterator = batchify_text(train_data, batch_size=self.batch_size, shuffle=True)
+        batch_text = next(batch_iterator)
+
+        # tokenize and prepare for LM
+        batch_tokens = tokenizer.encode_batch(batch_text)
+        input_batch, target_batch = self._prepare_batch_for_lm(batch_tokens, max_len)
+
+        if input_batch is None:
+            # degenerate case: all sequences too short
+            return torch.tensor(0.0, device=self.device, requires_grad=True)
+
+        # choose AMP or no AMP
+        if self.use_amp and self.device == "cuda":
+            amp_ctx = torch.autocast(device_type="cuda", dtype=torch.float16)
+        else:
+            amp_ctx = nullcontext()
+
+        # forward pass
+        with amp_ctx:
+            out = model(input_batch)
+
+            # model might return (logits, cache) or just logits
+            if isinstance(out, tuple):
+                logits = out[0]
+            else:
+                logits = out
+
+            vocab_size = logits.size(-1)
+            loss = F.cross_entropy(
+                logits.view(-1, vocab_size),
+                target_batch.view(-1),
+                ignore_index=self.pad_token_id,
+            )
+
+        return loss
+
 
     def train(self, model: AbstractLanguageModel, tokenizer, train_data: List[str], val_data: List[str] = None) -> AbstractLanguageModel:
         """
@@ -147,65 +212,85 @@ class TransformerTrainer(AbstractTrainer):
 
         # calculate approx total steps for scheduler
         approx_steps_per_epoch = len(train_data) // self.batch_size
-        total_steps = approx_steps_per_epoch * self.epochs
+        steps_per_epoch = max(1, approx_steps_per_epoch)
+        total_steps = steps_per_epoch * self.epochs
         scheduler = self._get_cosine_schedule_with_warmup(optimizer, total_steps)
 
-        loss_fn = nn.CrossEntropyLoss(ignore_index=0) # ignore padding token in loss calculation
-        max_len = model.config['max_len']
-        causal_mask = torch.triu(torch.ones(max_len, max_len) * float('-inf'), diagonal=1).to(self.device)
-
         step_counter = 0
+        best_val_loss = float('inf')
+        training_start_time = time.time()
 
         # --- Training Loop ---
         for epoch in range(self.epochs):
-            print(f"\n--- Epoch {epoch + 1}/{self.epochs} ---")
-            
-            # create fresh data iterator for each epoch
-            train_iterator = batchify_text(train_data, batch_size=self.batch_size, shuffle=True)
-            
-            pbar = tqdm(train_iterator, total=approx_steps_per_epoch, desc=f"Epoch {epoch+1} Training")
-            for batch_text in pbar:
-                # prepare batch
-                batch_tokens = tokenizer.encode_batch(batch_text)
-                x, y = self._prepare_batch_for_lm(batch_tokens, max_len)
+            model.train()
+            total_loss = 0.0
 
-                if x is None: continue
+            pbar = tqdm(range(steps_per_epoch), desc=f"Epoch {epoch+1}/{self.epochs}")
+            for step_idx in pbar:
+                optimizer.zero_grad()
 
-                optimizer.zero_grad(set_to_none=True)
-                
-                # forward pass
-                with torch.autocast(device_type=self.device, dtype=torch.float16, enabled=self.use_amp):
-                    logits, _ = model(x, mask=causal_mask, use_cache=False)
-                    # CrossEntropyLoss expects (N, C) and (N), so we reshape
-                    loss = loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
-                
-                # backward pass
-                if self.use_amp:
-                    # AMP-enabled path (CUDA only)
-                    self.scaler.scale(loss).backward()
-                    self.scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), self.grad_clip)
-                    self.scaler.step(optimizer)
-                    self.scaler.update()
-                else:
-                    # Standard path (CPU/MPS or no AMP)
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), self.grad_clip)
-                    optimizer.step()
-                
+                loss = self.compute_batch_loss(model, tokenizer, train_data)
+                loss.backward()
+
+                # Compute gradient norm before clipping
+                grad_norm = None
+                if self.grad_clip:
+                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.grad_clip)
+
+                optimizer.step()
                 scheduler.step()
 
-                step_counter += 1
-                
-                # Log Metrics
-                current_lr = scheduler.get_last_lr()[0]
-                pbar.set_postfix({"loss": f"{loss.item():.4f}", "lr": f"{current_lr:.2e}"})
+                total_loss += loss.item()
 
-            # end of epoch validation
-            if val_data:
+                # --- wandb dynamic log with LR and gradient norm ---
+                log_dict = {
+                    "train/loss": loss.item(),
+                    "train/perplexity": math.exp(loss.item()),
+                    "train/lr": scheduler.get_last_lr()[0],
+                }
+                
+                # Log gradient norm if available
+                if grad_norm is not None:
+                    log_dict["train/grad_norm"] = grad_norm.item() if torch.is_tensor(grad_norm) else grad_norm
+                
+                wandb.log(log_dict)
+                pbar.set_postfix({"loss": loss.item()})
+
+            avg_loss = total_loss / steps_per_epoch
+
+            # Compute validation loss if val_data is provided
+            if val_data is not None:
                 val_loss = self.calculate_validation_loss(model, tokenizer, val_data)
-                ppl = calculate_perplexity(val_loss)
-                print(f"Epoch {epoch+1} Validation - Loss: {val_loss:.4f} | Perplexity: {ppl:.2f}")
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                val_perplexity = math.exp(val_loss) if val_loss != float('inf') else float('inf')
+            else:
+                val_loss = None
+                val_perplexity = None
+
+            # Extra epoch-level logs
+            epoch_log = {
+                "epoch/loss_avg": avg_loss,
+                "epoch/perplexity_avg": math.exp(avg_loss),
+                "epoch/number": epoch + 1,
+            }
+            if val_loss is not None:
+                epoch_log["epoch/val_loss"] = val_loss
+                epoch_log["epoch/val_perplexity"] = val_perplexity
+            
+            wandb.log(epoch_log)
+
+        # --- Final timing and summary stats ---
+        training_duration = time.time() - training_start_time
         
         print("\nTransformer training complete.")
+        
+        # Log final stats to wandb.summary for easy comparison
+        wandb.summary["training/best_val_loss"] = best_val_loss if best_val_loss != float('inf') else None
+        wandb.summary["training/final_val_perplexity"] = math.exp(best_val_loss) if best_val_loss != float('inf') else None
+        wandb.summary["training/total_duration_seconds"] = training_duration
+        wandb.summary["training/num_model_params"] = sum(p.numel() for p in model.parameters())
+        wandb.summary["training/device"] = self.device
+        wandb.summary["training/vocab_size"] = tokenizer.get_vocab_size()
+        
         return model.to("cpu")

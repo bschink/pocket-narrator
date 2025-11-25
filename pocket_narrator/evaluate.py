@@ -8,6 +8,9 @@ import re
 import math
 from collections import Counter
 import torch
+# Temporary: disable grammar scoring because HF CoLA model requires torch>=2.6
+ENABLE_GRAMMAR_CHECK = False
+
 
 try:
     from transformers import pipeline
@@ -377,7 +380,7 @@ def run_evaluation(
         evaluation_results["rouge_l"] = total_rouge_l / batch_size
 
     # --- 6. Grammar Score (CoLA)
-    if check_grammar and predicted_text:
+    if check_grammar and ENABLE_GRAMMAR_CHECK and predicted_text:
         if torch.cuda.is_available():
             device = "cuda"
         elif torch.backends.mps.is_available():
@@ -388,6 +391,7 @@ def run_evaluation(
         evaluation_results["grammar_score"] = calculate_grammar_score(predicted_text, device=device)
     else:
         evaluation_results["grammar_score"] = None
+
     
     return evaluation_results
 
@@ -416,7 +420,7 @@ def run_dataset_evaluation(
     evaluation_results["repetition_rate"] = repetition_rate(dataset_text)
 
     # --- 3. Grammar Score (CoLA)
-    if check_grammar and dataset_text:
+    if check_grammar and ENABLE_GRAMMAR_CHECK and dataset_text:
         if torch.cuda.is_available():
             device = "cuda"
         elif torch.backends.mps.is_available():
@@ -427,5 +431,6 @@ def run_dataset_evaluation(
         evaluation_results["grammar_score"] = calculate_grammar_score(dataset_text, device=device)
     else:
         evaluation_results["grammar_score"] = None
+
     
     return evaluation_results

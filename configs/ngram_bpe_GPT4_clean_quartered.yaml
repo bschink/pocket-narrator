@@ -1,7 +1,7 @@
-run_name: "ngram_bpe_GPT4_tinystories"
+run_name: "ngram_bpe_GPT4_clean_quarted"
 
 data:
-  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.bos_eos.txt"
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.quarted.txt"
   val_ratio: 0.2
   random_seed: 42
   batch_size: 2
@@ -9,7 +9,10 @@ data:
 tokenizer:
   type: "bpe"
   path: "tokenizers/bpe_tokenizer"
-  special_tokens: ["<bos>", "<eos>", "<unk>"]
+  tokenizer_config:
+    vocab_size: 10000
+    merges_per_round: 200
+    special_tokens: ["<|endoftext|>"]
 
 model:
   type: "ngram"
@@ -24,4 +27,4 @@ generation:
 
 saving:
   model_dir: "models/n_gram"
-  model_name: null   # null means: auto-generate from timestamp
+  model_name: null
