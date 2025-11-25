@@ -4,6 +4,7 @@ for creating, loading, and interacting with all model architectures.
 """
 import os
 import json
+import pickle
 # import torch (moved downstairs)
 
 from .base_model import AbstractLanguageModel
@@ -58,6 +59,7 @@ def load_model(model_path: str) -> AbstractLanguageModel:
     """
     Loads a model artifact from a file, automatically detecting its format
     (JSON for n-gram, PyTorch .pth for neural models).
+    Supports .json, .model (tries PyTorch first, then JSON), and .pth extensions.
     """
     model_path = str(model_path)
     print(f"INFO: Loading model from {model_path}...")
@@ -65,9 +67,59 @@ def load_model(model_path: str) -> AbstractLanguageModel:
         raise FileNotFoundError(f"No model file found at {model_path}")
 
     # detect file type
-    if model_path.endswith(".json") or model_path.endswith(".model"):
-        # ngram model (supports both .json and .model extensions)
-        print("INFO: Detected JSON/model file. Using n-gram loading logic.")
+    if model_path.endswith(".pth"):
+        # PyTorch neural model (.pth)
+        print("INFO: Detected PyTorch .pth model file. Using neural model loading logic.")
+        
+        import torch
+        save_dict = torch.load(model_path)
+        config = save_dict['config']
+        state_dict = save_dict['state_dict']
+        
+        model = get_model(**config)
+        model.load_state_dict(state_dict)
+        return model
+    
+    elif model_path.endswith(".model"):
+        # .model extension: try PyTorch first, then JSON fallback
+        import torch
+        try:
+            print("INFO: Detected .model file. Attempting PyTorch load first...")
+            save_dict = torch.load(model_path)
+            config = save_dict.get('config', {})
+            state_dict = save_dict.get('state_dict')
+            
+            if config and state_dict:
+                # Successfully loaded as PyTorch
+                print("INFO: Loaded as PyTorch model (neural/transformer).")
+                model = get_model(**config)
+                model.load_state_dict(state_dict)
+                return model
+        except (FileNotFoundError, KeyError, pickle.UnpicklingError, RuntimeError, EOFError):
+            # PyTorch load failed, try JSON
+            pass
+        
+        # Fallback to JSON (n-gram)
+        print("INFO: PyTorch load failed. Attempting JSON load (n-gram)...")
+        try:
+            with open(model_path, 'r', encoding='utf-8') as f:
+                saved_data = json.load(f)
+            config = saved_data.get("config", {})
+            model_type = config.get("model_type")
+
+            if model_type == "ngram":
+                ModelClass = NGramModel
+            else:
+                raise ValueError(f"Unknown model type '{model_type}' in JSON file.")
+            
+            model = ModelClass.load(model_path, config)
+            return model
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to load .model file as PyTorch or JSON: {e}")
+    
+    elif model_path.endswith(".json"):
+        # JSON n-gram model
+        print("INFO: Detected JSON file. Using n-gram loading logic.")
         with open(model_path, 'r', encoding='utf-8') as f:
             saved_data = json.load(f)
         config = saved_data.get("config", {})
@@ -79,19 +131,6 @@ def load_model(model_path: str) -> AbstractLanguageModel:
             raise ValueError(f"Unknown model type '{model_type}' in JSON file.")
         
         model = ModelClass.load(model_path, config)
-        return model
-
-    elif model_path.endswith(".pth"):
-        # neural model
-        print("INFO: Detected PyTorch .pth model file. Using neural model loading logic.")
-        
-        import torch
-        save_dict = torch.load(model_path)
-        config = save_dict['config']
-        state_dict = save_dict['state_dict']
-        
-        model = get_model(**config)
-        model.load_state_dict(state_dict)
         return model
         
     else:

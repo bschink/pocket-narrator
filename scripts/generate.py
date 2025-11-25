@@ -12,14 +12,13 @@ How to Use:
 
     PYTHONPATH=. python3 scripts/generate.py \
     --prompt "the tree is" \
-    --model_path models/n_gram/ngram_20251125_171941.model \
+    --model_path models/n_gram/ngram_20251125_185557.model \
     --generation_strategy sample \
     --no_repeat_ngram_size 3 \
     --tokenizer_type bpe \
     --tokenizer_path tokenizers/bpe_tokenizer
 
-  - To see all options:
-    python scripts/generate.py --help
+
 """
 import sys
 from pathlib import Path
