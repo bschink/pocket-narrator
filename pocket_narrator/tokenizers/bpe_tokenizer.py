@@ -20,14 +20,40 @@ GPT2_SPLIT_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}
 GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r{
 \n}]*|\s*[\r\n]|\s+(?!\S)|\s+"""
 
-def _count_pairs_in_batch(batch: List[str], pattern: str) -> Counter:
+def _count_pairs_in_batch(batch: List[str], pattern: str, merges: dict = None) -> Counter:
     """A worker function that counts pairs in a single batch of text."""
     stats = Counter()
     compiled_pattern = re.compile(pattern)
+    merges = merges or {}
+    
     for text in batch:
         text_chunks = re.findall(compiled_pattern, text)
         for chunk in text_chunks:
+            # Apply existing merges first
             ids = list(chunk.encode("utf-8"))
+            while len(ids) >= 2:
+                # Find pairs that can be merged
+                pair = min(
+                    ((ids[i], ids[i+1]) for i in range(len(ids)-1) if (ids[i], ids[i+1]) in merges),
+                    key=lambda p: merges.get(p, float("inf")),
+                    default=None
+                )
+                if pair is None or pair not in merges:
+                    break
+                # Merge the pair
+                idx = merges[pair]
+                new_ids = []
+                i = 0
+                while i < len(ids):
+                    if i < len(ids) - 1 and ids[i] == pair[0] and ids[i+1] == pair[1]:
+                        new_ids.append(idx)
+                        i += 2
+                    else:
+                        new_ids.append(ids[i])
+                        i += 1
+                ids = new_ids
+            
+            # Count pairs from the merged tokens
             for pair in zip(ids, ids[1:]):
                 stats[pair] += 1
     return stats
@@ -68,7 +94,7 @@ class BPETokenizer(AbstractTokenizer):
             num_workers = max(1, cpu_count() - 1)
             stats = Counter()
 
-            worker_func = partial(_count_pairs_in_batch, pattern=self.pattern)
+            worker_func = partial(_count_pairs_in_batch, pattern=self.pattern, merges=self.merges)
             
             with Pool(processes=num_workers) as pool:
                 pbar = tqdm(pool.imap_unordered(worker_func, corpus_iterator), desc=f"Round {round_num+1} Scan")

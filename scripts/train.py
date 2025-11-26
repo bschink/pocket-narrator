@@ -194,6 +194,11 @@ def main():
         # tokenizer
         tokenizer_type = cfg["tokenizer"]["type"]
         tokenizer_path = cfg["tokenizer"]["path"]
+        
+        # Read tokenizer_config from YAML (for BPE)
+        if "tokenizer_config" in cfg["tokenizer"]:
+            bpe_tokenizer_config = cfg["tokenizer"]["tokenizer_config"]
+        
         # for character tokenizer we may have special tokens
         char_special_tokens = cfg["tokenizer"].get("special_tokens", None)
 
@@ -202,8 +207,16 @@ def main():
         if model_type == "ngram":
             model_config = {"n": cfg["model"]["n"]}
         else:
-            # you can expand this later for transformer configs
-            model_config = MODEL_CONFIG.copy()
+            # Read transformer model config from YAML
+            model_config = {
+                "d_model": cfg["model"].get("d_model", 128),
+                "n_layers": cfg["model"].get("n_layers", 2),
+                "n_head": cfg["model"].get("n_head", 2),
+                "max_len": cfg["model"].get("max_len", 128),
+                "dropout": cfg["model"].get("dropout", 0.1),
+                "pos_encoding_type": cfg["model"].get("pos_encoding_type", "sinusoidal"),
+                "attention_type": cfg["model"].get("attention_type", "multi_head"),
+            }
 
         trainer_type = cfg["trainer"]["type"]
 
@@ -303,6 +316,15 @@ def main():
     if eos_token_id is None:
         print("WARNING: No <eos> token found in tokenizer.")
 
+    # --- DEBUG: check vocab sizes and token ranges ---
+    print("\nDEBUG: Tokenizer Diagnostics:")
+    print(f"DEBUG: tokenizer vocab_size: {tokenizer.get_vocab_size()}")
+    print(f"DEBUG: tokenizer type: {tokenizer_type}")
+    if hasattr(tokenizer, 'special_tokens'):
+        print(f"DEBUG: special_tokens: {tokenizer.special_tokens}")
+    if hasattr(tokenizer, 'merges'):
+        print(f"DEBUG: number of BPE merges: {len(tokenizer.merges)}")
+
     model_config = model_config.copy()
     model_config["eos_token_id"] = eos_token_id
 
@@ -311,7 +333,23 @@ def main():
         vocab_size=tokenizer.get_vocab_size(),
         **model_config,
     )
-    trainer = get_trainer(trainer_type=trainer_type)
+    
+    # Create trainer with config from YAML (if transformer)
+    if trainer_type == "transformer" and cfg is not None:
+        trainer_config = cfg.get("trainer", {})
+        trainer = get_trainer(
+            trainer_type=trainer_type,
+            learning_rate=float(trainer_config.get("learning_rate", 3e-4)),
+            epochs=int(trainer_config.get("epochs", 1)),
+            batch_size=batch_size,
+            weight_decay=float(trainer_config.get("weight_decay", 0.1)),
+            grad_clip=float(trainer_config.get("grad_clip", 1.0)),
+            warmup_steps=int(trainer_config.get("warmup_steps", 0)),
+            use_amp=bool(trainer_config.get("use_amp", False)),
+            kv_caching_enabled=bool(trainer_config.get("kv_caching_enabled", False)),
+        )
+    else:
+        trainer = get_trainer(trainer_type=trainer_type)
 
     # --- Append the wandb.config with architecture/tokenizer/trainer metadata ---
     extra_cfg = {}
@@ -381,34 +419,15 @@ def main():
     else:
         val_loss = None # NGram doesn't support this  
 
-
-    # --- DEBUG: check vocab sizes and token ranges ---
-    print("DEBUG: tokenizer vocab_size:", tokenizer.get_vocab_size())
-    try:
-        # TransformerModel has token_embedding; n-gram model won't
-        embedding = getattr(model, "token_embedding", None)
-        if embedding is not None:
-            print("DEBUG: model embedding num_embeddings:", embedding.num_embeddings)
-        else:
-            print("DEBUG: model has no token_embedding attribute (probably n-gram).")
-    except Exception as e:
-        print("DEBUG: error reading model.embedding:", e)
-
-    # compute max token id in val_inputs
-    non_empty_seqs = [seq for seq in val_inputs if len(seq) > 0]
-    if non_empty_seqs:
-        max_token_id = max(max(seq) for seq in non_empty_seqs)
-        print("DEBUG: max token id in val_inputs:", max_token_id)
-    else:
-        print("DEBUG: val_inputs is empty!")
-
-
     predict_kwargs = {
         "strategy": generation_strategy,
         "no_repeat_ngram_size": no_repeat_ngram_size,
     }
     if model_type == "transformer":
         predict_kwargs["use_cache"] = args.use_cache
+        predict_kwargs["max_length"] = model_config.get("max_len", 128)  # Use model's max_len for generation
+    else:
+        predict_kwargs["max_length"] = 100  # For n-gram models
 
     predicted_tokens_batch = model.predict_sequence_batch(
         val_inputs,
