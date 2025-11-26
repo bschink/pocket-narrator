@@ -19,11 +19,11 @@ class TransformerTrainer(AbstractTrainer):
     def __init__(self, 
                  learning_rate: float = 3e-4, 
                  epochs: int = 1, 
-                 batch_size: int = 32,
+                 batch_size: int = 128,
                  weight_decay: float = 0.1,
                  grad_clip: float = 1.0,
-                 warmup_steps: int = 100,
-                 use_amp: bool = True,
+                 warmup_steps: int = 0,
+                 use_amp: bool = False,
                  kv_caching_enabled: bool = False):
         """
         Initializes the Transformer Trainer with its configuration.
@@ -198,12 +198,18 @@ class TransformerTrainer(AbstractTrainer):
         return loss
 
 
-    def train(self, model: AbstractLanguageModel, tokenizer, train_data: List[str], val_data: List[str] = None) -> AbstractLanguageModel:
+    def train(self, model: AbstractLanguageModel, tokenizer, train_data: List[str], val_data: List[str] = None, batch_size: int = None) -> AbstractLanguageModel:
         """
         The main training loop for the Transformer model.
         optional validation data can be provided to report perplexity during training.
+        If batch_size is provided, it overrides the trainer's default batch_size.
         """
+        # Use provided batch_size if specified, otherwise use instance batch_size
+        if batch_size is not None:
+            self.batch_size = batch_size
+            
         print(f"--- Running TransformerTrainer on device: {self.device} ---")
+        print(f"INFO: Using batch_size={self.batch_size}")
         
         # --- Setup ---
         model.to(self.device)

@@ -10,8 +10,8 @@ tokenizer:
   type: "bpe"
   path: "tokenizers/bpe_tokenizer"
   tokenizer_config:
-    vocab_size: 10000
-    merges_per_round: 200
+    vocab_size: 1000
+    merges_per_round: 20
     special_tokens: ["<|endoftext|>"]
 
 model:

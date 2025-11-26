@@ -34,6 +34,7 @@ from datetime import datetime
 import json
 import yaml
 import wandb
+import torch
 
 from pocket_narrator.models import get_model
 from pocket_narrator.tokenizers import get_tokenizer 
@@ -351,9 +352,10 @@ def main():
         if hasattr(trainer, attr):
             extra_cfg[f"trainer/{attr}"] = getattr(trainer, attr)
     
-    # Add scheduler details
-    extra_cfg["trainer/scheduler_type"] = "cosine_with_warmup"
-    extra_cfg["trainer/scheduler_warmup_steps"] = trainer.warmup_steps
+    # Add scheduler details (only for transformer trainer)
+    if trainer_type == "transformer":
+        extra_cfg["trainer/scheduler_type"] = "cosine_with_warmup"
+        extra_cfg["trainer/scheduler_warmup_steps"] = trainer.warmup_steps
 
     # update wandb config
     wandb.config.update(extra_cfg, allow_val_change=True)
@@ -362,10 +364,10 @@ def main():
     # --- Training ---
     print("\n--- Starting Model Training ---")
     if trainer_type == "ngram":
-        model = trainer.train(model=model, tokenizer=tokenizer, train_data=train_lines)
+        model = trainer.train(model=model, tokenizer=tokenizer, train_data=train_lines, batch_size=batch_size)
     else:
         model = trainer.train(model=model, tokenizer=tokenizer,
-                            train_data=train_lines, val_data=val_lines)
+                            train_data=train_lines, val_data=val_lines, batch_size=batch_size)
     print("Model training complete.")
 
     # --- Validation ---
@@ -475,26 +477,26 @@ def main():
 
     print(f"\n--- Training run finished successfully! Model saved to {model_path} ---")
     
-        # --- Add tokenizer_type to model config ---
-        # This allows evaluate.py to infer the correct tokenizer for each model
-        if model_path.endswith('.json') or model_path.endswith('.model'):
-            try:
-                with open(model_path, 'r', encoding='utf-8') as f:
-                    model_data = json.load(f)
-                model_data['config']['tokenizer_type'] = tokenizer_type
-                with open(model_path, 'w', encoding='utf-8') as f:
-                    json.dump(model_data, f, indent=2)
-                print(f"INFO: Added tokenizer_type='{tokenizer_type}' to model config")
-            except Exception as e:
-                print(f"WARNING: Could not update model config with tokenizer_type: {e}")
-        elif model_path.endswith('.pth') or model_path.endswith('.model'):
-            try:
-                checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
-                checkpoint['config']['tokenizer_type'] = tokenizer_type
-                torch.save(checkpoint, model_path)
-                print(f"INFO: Added tokenizer_type='{tokenizer_type}' to model config")
-            except Exception as e:
-                print(f"WARNING: Could not update model config with tokenizer_type: {e}")
+    # --- Add tokenizer_type to model config ---
+    # This allows evaluate.py to infer the correct tokenizer for each model
+    if model_path.endswith('.json') or model_path.endswith('.model'):
+        try:
+            with open(model_path, 'r', encoding='utf-8') as f:
+                model_data = json.load(f)
+            model_data['config']['tokenizer_type'] = tokenizer_type
+            with open(model_path, 'w', encoding='utf-8') as f:
+                json.dump(model_data, f, indent=2)
+            print(f"INFO: Added tokenizer_type='{tokenizer_type}' to model config")
+        except Exception as e:
+            print(f"WARNING: Could not update model config with tokenizer_type: {e}")
+    elif model_path.endswith('.pth') or model_path.endswith('.model'):
+        try:
+            checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
+            checkpoint['config']['tokenizer_type'] = tokenizer_type
+            torch.save(checkpoint, model_path)
+            print(f"INFO: Added tokenizer_type='{tokenizer_type}' to model config")
+        except Exception as e:
+            print(f"WARNING: Could not update model config with tokenizer_type: {e}")
 
     # --- Final W&B summary entries ---
     wandb.summary["model_filename"] = model_filename

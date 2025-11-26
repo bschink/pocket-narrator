@@ -32,10 +32,10 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         This method handles the entire assembly process.
         """
         # hyperparameters
-        d_model = kwargs.get('d_model', 256)
-        n_layers = kwargs.get('n_layers', 4)
-        n_head = kwargs.get('n_head', 4)
-        max_len = kwargs.get('max_len', 256)
+        d_model = kwargs.get('d_model', 128)
+        n_layers = kwargs.get('n_layers', 2)
+        n_head = kwargs.get('n_head', 2)
+        max_len = kwargs.get('max_len', 128)
         dropout = kwargs.get('dropout', 0.1)
         pos_encoding_type = kwargs.get("pos_encoding_type", "sinusoidal")
         attention_type = kwargs.get("attention_type", "multi_head")
