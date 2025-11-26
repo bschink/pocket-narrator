@@ -474,6 +474,27 @@ def main():
     model.save(model_path)
 
     print(f"\n--- Training run finished successfully! Model saved to {model_path} ---")
+    
+        # --- Add tokenizer_type to model config ---
+        # This allows evaluate.py to infer the correct tokenizer for each model
+        if model_path.endswith('.json') or model_path.endswith('.model'):
+            try:
+                with open(model_path, 'r', encoding='utf-8') as f:
+                    model_data = json.load(f)
+                model_data['config']['tokenizer_type'] = tokenizer_type
+                with open(model_path, 'w', encoding='utf-8') as f:
+                    json.dump(model_data, f, indent=2)
+                print(f"INFO: Added tokenizer_type='{tokenizer_type}' to model config")
+            except Exception as e:
+                print(f"WARNING: Could not update model config with tokenizer_type: {e}")
+        elif model_path.endswith('.pth') or model_path.endswith('.model'):
+            try:
+                checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
+                checkpoint['config']['tokenizer_type'] = tokenizer_type
+                torch.save(checkpoint, model_path)
+                print(f"INFO: Added tokenizer_type='{tokenizer_type}' to model config")
+            except Exception as e:
+                print(f"WARNING: Could not update model config with tokenizer_type: {e}")
 
     # --- Final W&B summary entries ---
     wandb.summary["model_filename"] = model_filename

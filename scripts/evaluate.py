@@ -6,14 +6,13 @@ logging results to wandb with side-by-side comparisons, metrics tables, and
 per-model summaries.
 
 Usage:
-    PYTHONPATH=. python3 scripts/evaluate.py \\
-        --models models/ngram_20251125_185557.model models/transformer_20251125_220219.model \\
-        --validation data/processed/TinyStories/TinyStoriesV2-GPT4-val.txt \\
-        --run_name "Model Comparison Run 1"
-        --prompts_file config/prompts.txt \\
-        --max_new_tokens 50 \\
-        --temperature 0.7 \\
-        --wandb_project pocket-narrator-eval \\
+      
+        PYTHONPATH=. python3 scripts/evaluate.py \
+            --models models/transformer/transformer_20251125_233416.model models/transformer/transformer_20251125_220219.model models/n_gram/ngram_20251125_185557.model \
+            --validation data/raw/TinyStories/TinyStories-valid.txt \
+            --prompts_file config/prompts.txt \
+            --temperature 0.7 --max_new_tokens 80 \
+            --run_name "Three-Model Comparison: 2 Transformers vs 1 NGram"
 """
 
 import sys
@@ -75,23 +74,34 @@ def infer_model_type_and_tokenizer(model_path: str) -> tuple[str, str]:
     Returns (model_type, tokenizer_type) tuple.
     """
     model_path_str = str(model_path)
-    
-    # Try to load metadata from model if available
+
+    # If it's a PyTorch checkpoint / binary .model, try torch.load first
+    if model_path_str.endswith('.pth') or model_path_str.endswith('.model'):
+        try:
+            checkpoint = torch.load(model_path_str, map_location='cpu', weights_only=False)
+            config = checkpoint.get('config', {})
+            model_type = config.get('model_type', None)
+            tokenizer_type = config.get('tokenizer_type', None)
+            if model_type is not None:
+                return model_type, tokenizer_type
+        except Exception:
+            # fall through to try JSON load
+            pass
+
+    # Try JSON format (n-gram models)
     if model_path_str.endswith('.json') or model_path_str.endswith('.model'):
         try:
-            with open(model_path_str, 'r') as f:
+            with open(model_path_str, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             config = data.get('config', {})
             model_type = config.get('model_type', 'ngram')
-            tokenizer_type = config.get('tokenizer_type', 'character')
+            tokenizer_type = config.get('tokenizer_type', None)
             return model_type, tokenizer_type
-        except:
-            return 'ngram', 'character'
-    elif model_path_str.endswith('.pth'):
-        # Assume transformer
-        return 'transformer', 'bpe'
-    
-    return 'ngram', 'character'
+        except Exception:
+            pass
+
+    # Default fallback
+    return 'ngram', None
 
 
 def get_tokenizer_for_model(model_type: str, tokenizer_type: str = None) -> object:
@@ -193,17 +203,24 @@ def generate_for_prompts(
             input_batch = [prompt_tokens]
             
             # Generate using model's predict_sequence_batch
-            sampling_cfg = {
-                "strategy": "sample" if temperature > 0 else "greedy",
-            }
-            if temperature > 0:
-                sampling_cfg["temperature"] = temperature
+            if model_type == "ngram":
+                # NGram expects: max_length, strategy, no_repeat_ngram_size
+                output_tokens = model.predict_sequence_batch(
+                    input_batch,
+                    max_length=max_new_tokens,
+                    strategy="sample" if temperature > 0 else "greedy",
+                    no_repeat_ngram_size=3,
+                )
+            else:
+                sampling_cfg = {
+                    "temperature": temperature,
+                }
                 if top_k > 0:
                     sampling_cfg["top_k"] = top_k
                 if top_p < 1.0:
                     sampling_cfg["top_p"] = top_p
-            
-            output_tokens = model.predict_sequence_batch(input_batch, max_len=max_new_tokens, **sampling_cfg)
+
+                output_tokens = model.predict_sequence_batch(input_batch, max_len=max_new_tokens, **sampling_cfg)
             
             # Decode output
             if hasattr(tokenizer, 'decode'):
@@ -390,7 +407,9 @@ def main():
         # Load model and tokenizer
         try:
             model = load_model(model_path)
-            model.to(args.device)
+            # Only move model to device if it supports `.to()` (PyTorch models)
+            if hasattr(model, 'to'):
+                model.to(args.device)
             tokenizer = get_tokenizer_for_model(model_type, tokenizer_type)
         except Exception as e:
             print(f"ERROR: Failed to load model from {model_path}: {e}")
