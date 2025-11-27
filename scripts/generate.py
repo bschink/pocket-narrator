@@ -10,13 +10,24 @@ How to Use:
 
   - To provide your own prompt and model:
 
+
     PYTHONPATH=. python3 scripts/generate.py \
-    --prompt "the tree is" \
-    --model_path models/n_gram/ngram_20251125_185557.model \
+    --prompt "Once upon a time there was a bear" \
+    --model_path models/ngram/ngram_20251126_231926.model \
     --generation_strategy sample \
     --no_repeat_ngram_size 3 \
     --tokenizer_type bpe \
-    --tokenizer_path tokenizers/bpe_tokenizer
+    --tokenizer_path tokenizers/bpe_tokenizer_1
+
+    PYTHONPATH=. python3 scripts/generate.py \
+    --prompt "Once upon a time there was a bear" \
+    --model_path models/transformer/transformer_20251127_122026.model \
+    --generation_strategy sample \
+    --temperature 0.9 \
+    --top_k 50 \
+    --top_p 0.95 \
+    --tokenizer_type bpe \
+    --tokenizer_path tokenizers/bpe_tokenizer_1
 
 
 """
@@ -57,13 +68,37 @@ def main():
         type=str,
         choices=["greedy", "sample"],
         default="greedy",
-        help="How to pick next tokens: 'greedy' or 'sample'.",
+        help="[All models] How to pick next tokens: 'greedy' (deterministic) or 'sample' (random).",
     )
     parser.add_argument(
         "--no_repeat_ngram_size",
         type=int,
         default=None,
-        help="If set (e.g. 3), avoid repeating n-grams of this size.",
+        help="[N-gram models only] If set (e.g. 3), avoid repeating n-grams of this size.",
+    )
+    parser.add_argument(
+        "--max_length",
+        type=int,
+        default=200,
+        help="[All models] Maximum number of tokens to generate (default: 100).",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=1.0,
+        help="[Transformer models only] Sampling temperature (default: 1.0). Lower = more deterministic, higher = more random.",
+    )
+    parser.add_argument(
+        "--top_k",
+        type=int,
+        default=None,
+        help="[Transformer models only] Top-k sampling: only sample from top k most likely tokens (default: None/disabled).",
+    )
+    parser.add_argument(
+        "--top_p",
+        type=float,
+        default=None,
+        help="[Transformer models only] Top-p (nucleus) sampling: sample from smallest set of tokens with cumulative probability >= p (default: None/disabled).",
     )
     parser.add_argument(
         "--tokenizer_type",
@@ -104,10 +139,30 @@ def main():
     
     # --- inference pipeline ---
     prompt_tokens_batch = [tokenizer.encode(prompt_text)]
+    
+    # Build predict kwargs based on model type
+    predict_kwargs = {
+        "strategy": args.generation_strategy,
+        "max_length": args.max_length,
+    }
+    
+    # Add model-specific parameters
+    model_type = type(model).__name__
+    if model_type == "NGramModel":
+        # N-grams use no_repeat_ngram_size
+        if args.no_repeat_ngram_size:
+            predict_kwargs["no_repeat_ngram_size"] = args.no_repeat_ngram_size
+    elif model_type == "TransformerModel":
+        # Transformers use temperature and top_k
+        predict_kwargs["temperature"] = args.temperature
+        if args.top_k is not None:
+            predict_kwargs["top_k"] = args.top_k
+        if args.top_p is not None:
+            predict_kwargs["top_p"] = args.top_p
+    
     predicted_tokens_batch = model.predict_sequence_batch(
         prompt_tokens_batch,
-        strategy=args.generation_strategy,
-        no_repeat_ngram_size=args.no_repeat_ngram_size,
+        **predict_kwargs
     )
     predicted_text_batch = tokenizer.decode_batch(predicted_tokens_batch)
     

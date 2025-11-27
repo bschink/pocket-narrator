@@ -114,6 +114,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         max_new_tokens = kwargs.get("max_length", 50)
         strategy = kwargs.get("strategy", "greedy")
         use_cache = kwargs.get("use_cache", False)
+        temperature = kwargs.get("temperature", 1.0)
         eos_token_id = self.config.get("eos_token_id")
         device = next(self.parameters()).device
         max_context_len = self.config['max_len']
@@ -137,7 +138,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
                 next_token_logits = logits[:, -1, :]
                 
                 for _ in range(max_new_tokens):
-                    idx_next = self._sample_token(next_token_logits, strategy)
+                    idx_next = self._sample_token(next_token_logits, strategy, temperature)
                     
                     token_int = idx_next.item()
                     generated.append(token_int)
@@ -156,7 +157,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
                     logits, _ = self.forward(idx, use_cache=False)
                     next_token_logits = logits[:, -1, :]
                     
-                    idx_next = self._sample_token(next_token_logits, strategy)
+                    idx_next = self._sample_token(next_token_logits, strategy, temperature)
                     
                     token_int = idx_next.item()
                     generated.append(token_int)
@@ -169,8 +170,14 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
             
         return results
 
-    def _sample_token(self, logits, strategy):
-        """Helper for sampling strategy"""
+    def _sample_token(self, logits, strategy, temperature=1.0):
+        """Helper for sampling strategy with temperature scaling"""
+        
+        # Apply temperature scaling (only affects sampling, not greedy)
+        if strategy == "sample" and temperature != 1.0:
+            logits = logits / temperature
+        
+        # Sample based on strategy
         if strategy == "sample":
             probs = F.softmax(logits, dim=-1)
             return torch.multinomial(probs, num_samples=1)

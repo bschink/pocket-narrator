@@ -164,16 +164,24 @@ trainer:
 # GENERATION & EVALUATION CONFIGURATION
 # ============================================================================
 generation:
+  # ========== SHARED PARAMETERS (All Models) ==========
   # Generation strategy: "greedy" or "sample"
   # greedy: always pick the most likely next token
   # sample: randomly sample from the distribution (more creative, varied)
   strategy: "sample"
   
+  # Maximum number of tokens to generate
+  max_length: 100
+  
+  # ========== N-GRAM SPECIFIC PARAMETERS ==========
   # Size of n-grams to avoid repeating during generation
   # Set to None to disable
   # Typical values: 2, 3, 4 (trigram is common)
   # 0 or None: no repeated n-gram filtering
   no_repeat_ngram_size: 3
+  
+  # ========== TRANSFORMER SPECIFIC PARAMETERS ==========
+  # (These are ignored by n-gram models)
   
   # Sampling temperature (for strategy: "sample")
   # < 1.0: more deterministic (closer to greedy)
