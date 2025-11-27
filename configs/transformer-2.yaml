@@ -20,7 +20,7 @@ run_name: "transformer-2"
 # ============================================================================
 data:
   # Path to the training dataset (plain text, one sentence per line)
-  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.quartered.txt"
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.quarted.txt"
   
   # Fraction of data to use for validation (0.0 to 1.0)
   val_ratio: 0.2
@@ -94,7 +94,7 @@ model:
   
   # Maximum sequence length
   # Tokens beyond this will be truncated during training
-  max_len: 512
+  max_len: 256
   
   # Dropout rate (0.0 to 1.0)
   # Typical values: 0.1, 0.2, 0.3

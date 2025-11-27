@@ -127,15 +127,20 @@ class NGramModel(AbstractLanguageModel):
     ) -> list[list[int]]:
         """
         Generates a sequence continuation for each prompt in the batch.
+        - max_length: maximum number of NEW tokens to generate (not including prompt)
         - strategy: 'greedy' or 'sample'
         - no_repeat_ngram_size: if set (e.g., 3), try to avoid repeating
           n-grams of that size in the generated sequence.
-        Stops generating if max_length is reached or an <eos> token is produced.
+        Stops generating if:
+          1) max_length new tokens are reached, OR
+          2) eos_token_id is generated, OR
+          3) <|endoftext|> token is generated (if present in vocabulary)
         """
         predictions = []
         for prompt_tokens in input_tokens_batch:
             generated_sequence = list(prompt_tokens)
-            while len(generated_sequence) < len(prompt_tokens) + max_length:
+            num_generated = 0
+            while num_generated < max_length:
                 # last n-1 tokens of the current sequence
                 context = tuple(generated_sequence[-(self.n - 1):])
                 next_token = self._choose_next_token(
@@ -145,10 +150,12 @@ class NGramModel(AbstractLanguageModel):
                     no_repeat_ngram_size=no_repeat_ngram_size,
                 )
 
+                # Stop if EOS token or endoftext token is generated
                 if next_token == self.eos_token_id:
                     break
 
                 generated_sequence.append(next_token)
+                num_generated += 1
             
             # return generated part only
             predictions.append(generated_sequence[len(prompt_tokens):])

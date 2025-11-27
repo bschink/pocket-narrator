@@ -13,14 +13,14 @@
 #
 # ============================================================================
 
-run_name: "comprehensive_experiment"
+run_name: "ngram_b"
 
 # ============================================================================
 # DATA CONFIGURATION
 # ============================================================================
 data:
   # Path to the training dataset (plain text, one sentence per line)
-  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.quarted.txt"
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.eighth.txt"
   
   # Fraction of data to use for validation (0.0 to 1.0)
   val_ratio: 0.2
@@ -30,7 +30,7 @@ data:
   
   # Batch size for training (used in compute_batch_loss for transformers)
   # N-grams train on the full corpus, but this is still used for validation batching
-  batch_size: 16
+  batch_size: 256
 
 # ============================================================================
 # TOKENIZER CONFIGURATION
@@ -40,14 +40,15 @@ tokenizer:
   type: "bpe"
   
   # Path where tokenizer will be saved/loaded
-  path: "tokenizers/bpe_tokenizer"
+  path: "tokenizers/bpe_tokenizer_1000_eigth"
   
   # Tokenizer-specific parameters
   # These vary based on tokenizer type (see below)
+
+  # ========== BPE TOKENIZER PARAMETERS ==========
   tokenizer_config:
-    # ========== BPE TOKENIZER PARAMETERS ==========
     # Vocabulary size (must be >= 256 for BPE, includes special tokens)
-    vocab_size: 1024
+    vocab_size: 1000
     
     # Number of merge operations to perform per round
     # Recommended: 200-500 for large datasets
@@ -57,24 +58,25 @@ tokenizer:
     # Format: list of token strings
     special_tokens:
       - "<|endoftext|>"
-      - "<|pad|>"
-      - "<|bos|>"
-      - "<|eos|>"
+      # - "<|pad|>"
+      # - "<|bos|>"
+      # - "<|eos|>"
     
-    # ========== CHARACTER TOKENIZER PARAMETERS ==========
-    # (Uncomment to use character tokenizer instead)
-    # special_tokens:
-    #   - "<pad>"
-    #   - "<unk>"
-    #   - "<bos>"
-    #   - "<eos>"
+  # ========== CHARACTER TOKENIZER PARAMETERS ==========
+  # (Uncomment to use character tokenizer instead)
+  special_tokens:
+  - "<|endoftext|>"
+  #   - "<pad>"
+  #   - "<unk>"
+  #   - "<bos>"
+  #   - "<eos>"
 
 # ============================================================================
 # MODEL CONFIGURATION
 # ============================================================================
 model:
   # Model type: "transformer" or "ngram"
-  type: "transformer"
+  type: "ngram"
   
   # ========== TRANSFORMER MODEL PARAMETERS ==========
   # (Only used when type: "transformer")
@@ -121,7 +123,7 @@ model:
 # ============================================================================
 trainer:
   # Trainer type: "transformer" or "ngram"
-  type: "transformer"
+  type: "ngram"
   
   # ========== TRANSFORMER TRAINER PARAMETERS ==========
   # (Only used when type: "transformer")
@@ -164,7 +166,7 @@ trainer:
 # GENERATION & EVALUATION CONFIGURATION
 # ============================================================================
 
-  generation:
+generation:
   # ========== SHARED PARAMETERS (All Models) ==========
   # Generation strategy: "greedy" or "sample"
   # greedy: always pick the most likely next token
@@ -206,7 +208,7 @@ trainer:
 # ============================================================================
 saving:
   # Directory where trained models will be saved
-  model_dir: "models/transformer"
+  model_dir: "models/ngram"
   
   # Specific model filename (e.g., "my_model.model")
   # If null, a timestamped name will be auto-generated
