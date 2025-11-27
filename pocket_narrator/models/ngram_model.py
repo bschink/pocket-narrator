@@ -181,7 +181,7 @@ class NGramModel(AbstractLanguageModel):
         print("INFO: Instantiating n-gram model from config...")
         n = int(config['n'])
         vocab_size = int(config['vocab_size'])
-        eos_token_id = int(config['eos_token_id'])
+        eos_token_id = int(config['eos_token_id']) if config.get('eos_token_id') is not None else None
         model = cls(vocab_size=vocab_size, n=n, eos_token_id=eos_token_id)
 
         with open(model_path, 'r', encoding='utf-8') as f:
