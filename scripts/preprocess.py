@@ -270,6 +270,7 @@ def main():
     clean_path = out_dir / f"{base_name}.txt"
     half_path = out_dir / f"{base_name}.half.txt"
     quarter_path = out_dir / f"{base_name}.quarted.txt"
+    eighth_path = out_dir / f"{base_name}.eighth.txt"
     deleted_log_path = out_dir / f"{base_name}.deleted.txt"
     manifest_path = out_dir / f"{base_name}.manifest.json"
 
@@ -430,9 +431,10 @@ def main():
 
     half_file = None
     quarter_file = None
+    eighth_file = None
 
     if make_splits and kept:
-        print("[step 5] Creating 1/2 and 1/4 splits…")
+        print("[step 5] Creating 1/2, 1/4, and 1/8 splits…")
         rng = random.Random(args.split_seed)
         indices = list(range(len(kept)))
         rng.shuffle(indices)
@@ -440,12 +442,15 @@ def main():
         n = len(kept)
         half_n = n // 2
         quarter_n = n // 4
+        eighth_n = n // 8
 
         half_file = str(half_path)
         quarter_file = str(quarter_path)
+        eighth_file = str(eighth_path)
 
         half_path.parent.mkdir(parents=True, exist_ok=True)
         quarter_path.parent.mkdir(parents=True, exist_ok=True)
+        eighth_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(half_file, "w", encoding="utf-8") as f_half:
             for i in indices[:half_n]:
@@ -455,8 +460,13 @@ def main():
             for i in indices[:quarter_n]:
                 f_quarter.write(format_story_for_output(kept[i], output_delim) + "\n")
 
+        with open(eighth_file, "w", encoding="utf-8") as f_eighth:
+            for i in indices[:eighth_n]:
+                f_eighth.write(format_story_for_output(kept[i], output_delim) + "\n")
+
         print(f"[step 5] half → {half_file}")
         print(f"[step 5] quarter → {quarter_file}")
+        print(f"[step 5] eighth → {eighth_file}")
     else:
         if not kept:
             print("[step 5] No kept stories; splits skipped.")
@@ -475,6 +485,7 @@ def main():
         "deleted_log": str(deleted_log_path) if drop_invalid and deleted else None,
         "half_split": half_file,
         "quarter_split": quarter_file,
+        "eighth_split": eighth_file,
         "settings": {
             "delimiter": args.delimiter,
             "min_letters": args.min_letters,
