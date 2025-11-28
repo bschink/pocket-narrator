@@ -153,7 +153,7 @@ class TransformerTrainer(AbstractTrainer):
                 logits, _ = model(x, mask=causal_mask, use_cache=False)
                 loss_sum = loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
             
-            num_valid_tokens = (y.view(-1) != 0).sum().item()
+            num_valid_tokens = (y.view(-1) != self.pad_token_id).sum().item()
             total_nll += loss_sum.item()
             total_tokens += num_valid_tokens
             
