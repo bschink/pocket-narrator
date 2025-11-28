@@ -117,9 +117,11 @@ class TransformerTrainer(AbstractTrainer):
         return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     
     @torch.no_grad()
-    def calculate_validation_loss(self, model: nn.Module, tokenizer, val_data: List[str]) -> float:
+    def calculate_validation_loss(self, model: nn.Module, tokenizer, val_data: List[str], loss_fn: nn.Module) -> float:
         """
         Computes rigorous validation loss (NLL) for Perplexity.
+        Uses the same loss function as training for consistency.
+        Loss normalized as: sum of losses / num_valid_tokens
         """
         if self.pad_token_id is None:
             raise ValueError("pad_token_id must be set before computing validation loss.")
@@ -128,12 +130,12 @@ class TransformerTrainer(AbstractTrainer):
         model.to(self.device)
         model.eval()
         
-        loss_fn = nn.CrossEntropyLoss(ignore_index=self.pad_token_id, reduction='sum')
         max_len = model.config['max_len']
         causal_mask = torch.triu(torch.ones(max_len, max_len) * float('-inf'), diagonal=1).to(self.device)
         
         total_nll = 0.0
         total_tokens = 0
+        total_batches = 0
         
         val_iterator = batchify_text(val_data, batch_size=self.batch_size, shuffle=False)
         
@@ -156,15 +158,24 @@ class TransformerTrainer(AbstractTrainer):
             num_valid_tokens = (y.view(-1) != self.pad_token_id).sum().item()
             total_nll += loss_sum.item()
             total_tokens += num_valid_tokens
+            total_batches += 1
             
         if was_training: model.train()
         
-        if total_tokens == 0: return float('inf')
-        return total_nll / total_tokens
+        if total_tokens == 0: 
+            return float('inf')
+        
+        avg_val_loss = total_nll / total_tokens
+        
+        # DEBUG: Log validation loss computation details
+        print(f"[VAL LOSS DEBUG] total_batches={total_batches}, total_tokens={total_tokens}, total_nll={total_nll:.4f}, avg_loss={avg_val_loss:.6f}")
+        
+        return avg_val_loss
     
-    def compute_batch_loss(self, model, tokenizer, train_data: List[str]) -> torch.Tensor:
+    def compute_batch_loss(self, model, tokenizer, train_data: List[str], loss_fn: nn.Module) -> torch.Tensor:
         """
         Sample one random batch from train_data and compute cross-entropy loss.
+        Uses the same loss function as validation for consistency.
         """
         max_len = model.config["max_len"]
 
@@ -196,12 +207,15 @@ class TransformerTrainer(AbstractTrainer):
             else:
                 logits = out
 
-            vocab_size = logits.size(-1)
-            loss = F.cross_entropy(
-                logits.view(-1, vocab_size),
-                target_batch.view(-1),
-                ignore_index=self.pad_token_id,
-            )
+            # Use the same CrossEntropyLoss as validation
+            loss_sum = loss_fn(logits.view(-1, logits.size(-1)), target_batch.view(-1))
+            
+            # Normalize by number of valid (non-padded) tokens
+            num_valid_tokens = (target_batch.view(-1) != self.pad_token_id).sum().item()
+            if num_valid_tokens > 0:
+                loss = loss_sum / num_valid_tokens
+            else:
+                loss = torch.tensor(0.0, device=self.device, requires_grad=True)
 
         return loss
 
@@ -229,6 +243,9 @@ class TransformerTrainer(AbstractTrainer):
         steps_per_epoch = max(1, approx_steps_per_epoch)
         total_steps = steps_per_epoch * self.epochs
         scheduler = self._get_cosine_schedule_with_warmup(optimizer, total_steps)
+        
+        # Create shared loss function for both train and validation
+        loss_fn = nn.CrossEntropyLoss(ignore_index=self.pad_token_id, reduction='sum')
 
         step_counter = 0
         best_val_loss = float('inf')
@@ -243,7 +260,7 @@ class TransformerTrainer(AbstractTrainer):
             for step_idx in pbar:
                 optimizer.zero_grad()
 
-                loss = self.compute_batch_loss(model, tokenizer, train_data)
+                loss = self.compute_batch_loss(model, tokenizer, train_data, loss_fn)
                 loss.backward()
 
                 # Compute gradient norm before clipping
@@ -274,7 +291,7 @@ class TransformerTrainer(AbstractTrainer):
 
             # Compute validation loss if val_data is provided
             if val_data is not None:
-                val_loss = self.calculate_validation_loss(model, tokenizer, val_data)
+                val_loss = self.calculate_validation_loss(model, tokenizer, val_data, loss_fn)
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                 val_perplexity = math.exp(val_loss) if val_loss != float('inf') else float('inf')

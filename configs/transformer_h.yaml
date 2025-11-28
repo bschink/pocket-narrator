@@ -40,7 +40,7 @@ tokenizer:
   type: "bpe"
   
   # Path where tokenizer will be saved/loaded
-  path: "tokenizers/bpe_tokenizer_5000_eigth"
+  path: "tokenizers/bpe_tokenizer_5k_eigth"
   
   # Tokenizer-specific parameters
   # These vary based on tokenizer type (see below)

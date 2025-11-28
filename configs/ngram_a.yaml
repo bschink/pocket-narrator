@@ -40,7 +40,7 @@ tokenizer:
   type: "character"
   
   # Path where tokenizer will be saved/loaded
-  path: "tokenizers/character_tokenizer_eigth"
+  path: "tokenizers/character_tokenizer_1k_eigth"
   
   # Tokenizer-specific parameters
   # These vary based on tokenizer type (see below)
