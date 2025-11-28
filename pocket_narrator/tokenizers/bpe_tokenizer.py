@@ -61,7 +61,7 @@ def _count_pairs_in_batch(batch: List[str], pattern: str, merges: dict = None) -
 class BPETokenizer(AbstractTokenizer):
     """A BPE tokenizer that learns its vocabulary from a training data stream."""
 
-    def __init__(self, vocab_size: int, special_tokens: dict, pattern: str = GPT4_SPLIT_PATTERN, merges_per_round: int = 500):
+    def __init__(self, vocab_size: int, special_tokens: dict, pattern: str = GPT4_SPLIT_PATTERN, merges_per_round: int = 200):
         super().__init__()
         if vocab_size < 256:
             raise ValueError("Vocab size must be at least 256 for BPE.")

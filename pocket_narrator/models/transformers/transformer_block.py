@@ -20,10 +20,11 @@ class TransformerBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, mask=None, 
-                layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None):
+                layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+                is_causal: bool = False):
         # using Pre-LayerNorm architecture for better training stability  
         # Attention Sub-layer
-        attn_out, present = self.attn(self.ln_1(x), mask=mask, layer_past=layer_past)
+        attn_out, present = self.attn(self.ln_1(x), mask=mask, layer_past=layer_past, is_causal=is_causal)
         x = x + self.dropout(attn_out)
         
         # Feed-Forward Sub-layer

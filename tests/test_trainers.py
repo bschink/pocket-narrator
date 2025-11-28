@@ -47,7 +47,7 @@ def test_get_trainer_factory_failure_for_unknown_type():
 
 @pytest.fixture
 def simple_trainer():
-    return TransformerTrainer(batch_size=2, use_amp=False)
+    return TransformerTrainer(batch_size=2, use_amp=False, pad_token_id=0)
 
 def test_transformer_trainer_prepare_batch(simple_trainer):
     batch_tokens = [[1, 2, 3, 4], [5, 6, 7, 8, 9, 10]]
@@ -64,8 +64,10 @@ def test_transformer_trainer_prepare_batch(simple_trainer):
     assert torch.equal(x[0], expected_x_0)
     assert torch.equal(y[0], expected_y_0)
 
-def test_transformer_trainer_calculate_validation_loss(simple_trainer):
+def test_transformer_trainer_calculate_validation_loss():
     # Arrange
+    simple_trainer = TransformerTrainer(batch_size=2, use_amp=False, pad_token_id=0)
+    
     model_config = {
         "d_model": 4, "n_layers": 1, "n_head": 2, "max_len": 5, 
         "dropout": 0.0, "vocab_size": 10
@@ -91,12 +93,12 @@ def test_transformer_trainer_train_method_updates_weights(mock_wandb):
     """
     # Arrange
     train_data = ["abcde", "fghij"]
-    special_tokens = ["<pad>", "<unk>", "<bos>", "<eos>"]
+    special_tokens = ["<|pad|>", "<|unk|>", "<|bos|>", "<|eos|>"]
     
     tokenizer = CharacterTokenizer(special_tokens=special_tokens)
     tokenizer.train(train_data)
     
-    eos_token_id = tokenizer.token_to_id("<eos>")
+    eos_token_id = tokenizer.token_to_id("<|eos|>")
     
     model_config = {
         "d_model": 16, "n_layers": 1, "n_head": 2, "max_len": 10, "dropout": 0.0,
@@ -107,8 +109,9 @@ def test_transformer_trainer_train_method_updates_weights(mock_wandb):
     
     initial_weights = model.lm_head.weight.clone().detach()
     
-    # Use CPU for tests
-    trainer = TransformerTrainer(epochs=1, batch_size=2, use_amp=False, warmup_steps=0)
+    pad_token_id = tokenizer.token_to_id("<|pad|>")
+    
+    trainer = TransformerTrainer(epochs=1, batch_size=2, use_amp=False, warmup_steps=0, pad_token_id=pad_token_id)
     
     # Act
     # Note: The trainer handles the unpacking of (logits, present) internally now.

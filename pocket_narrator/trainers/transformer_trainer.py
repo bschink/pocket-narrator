@@ -24,7 +24,8 @@ class TransformerTrainer(AbstractTrainer):
                  grad_clip: float = 1.0,
                  warmup_steps: int = 0,
                  use_amp: bool = False,
-                 kv_caching_enabled: bool = False):
+                 kv_caching_enabled: bool = False,
+                 pad_token_id: int = None):
         """
         Initializes the Transformer Trainer with its configuration.
         
@@ -37,6 +38,7 @@ class TransformerTrainer(AbstractTrainer):
             warmup_steps (int): Number of warmup steps for learning rate scheduling.
             use_amp (bool): Whether to use automatic mixed precision for training.
             kv_caching_enabled (bool): Whether KV caching is enabled during generation.
+            pad_token_id (int): The token ID used for padding. Must be provided before training.
         """
         super().__init__()
         self.learning_rate = learning_rate
@@ -51,7 +53,7 @@ class TransformerTrainer(AbstractTrainer):
         self.use_amp = use_amp and self.device == "cuda"
 
         # padding index used in batches
-        self.pad_token_id = 0
+        self.pad_token_id = pad_token_id
 
         # Only create a GradScaler when we are actually using AMP on CUDA.
         if self.use_amp:
@@ -76,6 +78,9 @@ class TransformerTrainer(AbstractTrainer):
         - Creates input (x) and target (y) tensors, where y is x shifted by one.
         - Moves tensors to the correct device.
         """
+        if self.pad_token_id is None:
+            raise ValueError("pad_token_id must be set before training. Call trainer.set_pad_token_id() or pass it to the constructor.")
+        
         batch_x, batch_y = [], []
         for tokens in batch_tokens:
             # truncate to max_len + 1
@@ -87,8 +92,8 @@ class TransformerTrainer(AbstractTrainer):
             
             # pad sequences if they are shorter than max_len
             pad_len = max_len - len(x)
-            x += [0] * pad_len # assume 0 is the <pad> token ID
-            y += [0] * pad_len
+            x += [self.pad_token_id] * pad_len
+            y += [self.pad_token_id] * pad_len
 
             batch_x.append(x)
             batch_y.append(y)
@@ -116,11 +121,14 @@ class TransformerTrainer(AbstractTrainer):
         """
         Computes rigorous validation loss (NLL) for Perplexity.
         """
+        if self.pad_token_id is None:
+            raise ValueError("pad_token_id must be set before computing validation loss.")
+        
         was_training = model.training
         model.to(self.device)
         model.eval()
         
-        loss_fn = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
+        loss_fn = nn.CrossEntropyLoss(ignore_index=self.pad_token_id, reduction='sum')
         max_len = model.config['max_len']
         causal_mask = torch.triu(torch.ones(max_len, max_len) * float('-inf'), diagonal=1).to(self.device)
         

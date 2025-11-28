@@ -57,14 +57,14 @@ tokenizer:
     # Format: list of token strings
     special_tokens:
       - "<|endoftext|>"
-      # - "<|pad|>"
+      - "<|pad|>"
       # - "<|bos|>"
       # - "<|eos|>"
     
     # ========== CHARACTER TOKENIZER PARAMETERS ==========
     # (Uncomment to use character tokenizer instead)
     # special_tokens:
-    #   - "<pad>"
+    #   - "<|pad|>"
     #   - "<unk>"
     #   - "<bos>"
     #   - "<eos>"

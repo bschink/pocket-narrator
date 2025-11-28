@@ -5,7 +5,7 @@ from pocket_narrator.tokenizers.base_tokenizer import AbstractTokenizer
 from pocket_narrator.tokenizers.character_tokenizer import CharacterTokenizer
 from pocket_narrator.tokenizers.bpe_tokenizer import BPETokenizer
 
-DEFAULT_SPECIAL_TOKENS = ["<pad>", "<unk>", "<bos>", "<eos>"]
+DEFAULT_SPECIAL_TOKENS = ["<|pad|>", "<|unk|>", "<|bos|>", "<|eos|>"]
 
 # --- Tests for the CharacterTokenizer Class ---
 
@@ -22,7 +22,7 @@ def test_character_train_method_builds_vocab_correctly():
     tokenizer.train(corpus)
     unique_chars = sorted(list(set("".join(corpus))))
     assert tokenizer.get_vocab_size() == len(DEFAULT_SPECIAL_TOKENS) + len(unique_chars)
-    assert tokenizer.unk_token_id == tokenizer.token_to_id("<unk>")
+    assert tokenizer.unk_token_id == tokenizer.token_to_id("<|unk|>")
 
 def test_character_untrained_tokenizer_raises_runtime_error():
     tokenizer = CharacterTokenizer(special_tokens=DEFAULT_SPECIAL_TOKENS)
@@ -52,7 +52,7 @@ def test_character_encode_decode_after_training_with_unknowns():
     decoded = tokenizer.decode(encoded)
     unk_id = tokenizer.unk_token_id
     assert encoded == [tokenizer.char_to_idx['a'], unk_id]
-    assert decoded == "a<unk>"
+    assert decoded == "a<|unk|>"
 
 # --- Tests for the BPETokenizer Class ---
 

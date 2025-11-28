@@ -58,7 +58,7 @@ tokenizer:
     # Format: list of token strings
     special_tokens:
       - "<|endoftext|>"
-      # - "<|pad|>"
+      - "<|pad|>"
       # - "<|bos|>"
       # - "<|eos|>"
     
@@ -66,7 +66,7 @@ tokenizer:
   # (Uncomment to use character tokenizer instead)
   special_tokens:
   - "<|endoftext|>"
-  #   - "<pad>"
+  - "<|pad|>"
   #   - "<unk>"
   #   - "<bos>"
   #   - "<eos>"

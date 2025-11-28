@@ -33,7 +33,7 @@ class MambaConfig:
     expand: int = 2
     max_seq_len: int = 256
     dropout: float = 0.1
-    pad_token_id: int = 0
+    pad_token_id: int = None  # Must be set before training
 
 
 class MambaLM(nn.Module):

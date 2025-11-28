@@ -64,10 +64,10 @@ tokenizer:
     # ========== CHARACTER TOKENIZER PARAMETERS ==========
     # (Uncomment to use character tokenizer instead)
     # special_tokens:
-    #   - "<pad>"
-    #   - "<unk>"
-    #   - "<bos>"
-    #   - "<eos>"
+    #   - "<|pad|>"
+    #   - "<|unk|>"
+    #   - "<|bos|>"
+    #   - "<|eos|>"
 
 # ============================================================================
 # MODEL CONFIGURATION

@@ -111,7 +111,7 @@ def main():
     parser.add_argument(
         "--tokenizer_config",
         type=json.loads,
-        default='{"vocab_size": 1024, "special_tokens": ["<bos>", "<eos>", "<pad>"], "merges_per_round": 200}',
+        default='{"vocab_size": 5000, "special_tokens": ["<|endoftext|>", "<|pad|>"], "merges_per_round": 200}',
         help='JSON string for tokenizer config (e.g., \'{"vocab_size": 1024}\').',
     )
     parser.add_argument(
@@ -312,14 +312,23 @@ def main():
     else:
         print("INFO: Using pre-existing/loaded tokenizer.")
 
-    eos_token_id = tokenizer.token_to_id("<eos>")
+    eos_token_id = tokenizer.token_to_id("<|eos|>")
     if eos_token_id is None:
-        print("WARNING: No <eos> token found in tokenizer.")
+        eos_token_id = tokenizer.token_to_id("<eos>")
+    if eos_token_id is None:
+        print("WARNING: No <|eos|> token found in tokenizer.")
+
+    pad_token_id = tokenizer.token_to_id("<|pad|>")
+    if pad_token_id is None:
+        pad_token_id = tokenizer.token_to_id("<pad>")
+    if pad_token_id is None:
+        print("WARNING: No <|pad|> token found in tokenizer. Padding may not work correctly.")
 
     # --- DEBUG: check vocab sizes and token ranges ---
     print("\nDEBUG: Tokenizer Diagnostics:")
     print(f"DEBUG: tokenizer vocab_size: {tokenizer.get_vocab_size()}")
     print(f"DEBUG: tokenizer type: {tokenizer_type}")
+    print(f"DEBUG: pad_token_id: {pad_token_id}")
     if hasattr(tokenizer, 'special_tokens'):
         print(f"DEBUG: special_tokens: {tokenizer.special_tokens}")
     if hasattr(tokenizer, 'merges'):
@@ -347,7 +356,10 @@ def main():
             warmup_steps=int(trainer_config.get("warmup_steps", 0)),
             use_amp=bool(trainer_config.get("use_amp", False)),
             kv_caching_enabled=bool(trainer_config.get("kv_caching_enabled", False)),
+            pad_token_id=pad_token_id,
         )
+    elif trainer_type == "transformer":
+        trainer = get_trainer(trainer_type=trainer_type, pad_token_id=pad_token_id)
     else:
         trainer = get_trainer(trainer_type=trainer_type)
 

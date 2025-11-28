@@ -193,7 +193,7 @@ class TransformerTrainer(AbstractTrainer):
             expand=int(config.get("expand", 2)),
             max_seq_len=int(config.get("max_seq_len", 256)),
             dropout=float(config.get("dropout", 0.1)),
-            pad_token_id=int(config.get("pad_token_id", -100)),
+            pad_token_id=config.get("pad_token_id"),
         )
 
         saved = torch.load(model_path, map_location=model.device)

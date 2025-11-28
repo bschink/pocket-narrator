@@ -75,13 +75,16 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
                 idx: torch.Tensor, 
                 mask: torch.Tensor = None,
                 past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None,
-                use_cache: bool = False):
+                use_cache: bool = False,
+                is_causal: bool = True):
         """
         Args:
             idx: Input tokens. Shape (B, L).
             mask: Attention mask.
             past_key_values: List of (K, V) tuples from previous step.
             use_cache: If True, returns new key_values. If False, returns None for KV.
+            is_causal: If True, applies causal masking. Should be True for prefill/non-cached,
+                      False for single-token decode with cache.
         """
         x = self.token_embedding(idx)
         if self.pos_encoding is not None:
@@ -93,7 +96,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         for i, block in enumerate(self.blocks):
             layer_past = past_key_values[i] if past_key_values is not None else None
             
-            x, layer_present = block(x, mask=mask, layer_past=layer_past)
+            x, layer_present = block(x, mask=mask, layer_past=layer_past, is_causal=is_causal)
             
             if use_cache:
                 present_key_values.append(layer_present)
@@ -134,9 +137,10 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
                 ctx_tokens = generated[-max_context_len:]
                 idx = torch.tensor([ctx_tokens], dtype=torch.long, device=device)
                 
-                logits, past_key_values = self.forward(idx, use_cache=True)
+                logits, past_key_values = self.forward(idx, use_cache=True, is_causal=True)
                 next_token_logits = logits[:, -1, :]
                 
+                # generate tokens one at a time
                 for _ in range(max_new_tokens):
                     idx_next = self._sample_token(next_token_logits, strategy, temperature)
                     
@@ -145,7 +149,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
                     if eos_token_id is not None and token_int == eos_token_id: break
                     if len(generated) >= max_context_len: break
 
-                    logits, past_key_values = self.forward(idx_next, past_key_values=past_key_values, use_cache=True)
+                    logits, past_key_values = self.forward(idx_next, past_key_values=past_key_values, use_cache=True, is_causal=False)
                     next_token_logits = logits[:, -1, :]
 
             # without kv caching
@@ -154,7 +158,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
                     ctx_tokens = generated[-max_context_len:]
                     idx = torch.tensor([ctx_tokens], dtype=torch.long, device=device)
                     
-                    logits, _ = self.forward(idx, use_cache=False)
+                    logits, _ = self.forward(idx, use_cache=False, is_causal=True)
                     next_token_logits = logits[:, -1, :]
                     
                     idx_next = self._sample_token(next_token_logits, strategy, temperature)

@@ -25,7 +25,8 @@ class MultiHeadSelfAttention(AbstractAttention):
     def forward(self, 
                 x: torch.Tensor, 
                 mask: torch.Tensor = None,
-                layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+                layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+                is_causal: bool = False
                 ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         batch_size, seq_len, d_model = x.shape
         
@@ -49,11 +50,12 @@ class MultiHeadSelfAttention(AbstractAttention):
         present = (k, v)
         
         # apply scaled dot-product attention: softmax(QK^T / sqrt(d_k)) @ V
+        effective_is_causal = is_causal and mask is None
         y = F.scaled_dot_product_attention(
             q, k, v, 
-            attn_mask=mask, 
+            attn_mask=mask if not is_causal else None, 
             dropout_p=self.dropout.p if self.training else 0.0,
-            is_causal=False # handle causal masking manually or it's implicit in inference
+            is_causal=effective_is_causal
         )
         
         # concatenate heads and project back to d_model
