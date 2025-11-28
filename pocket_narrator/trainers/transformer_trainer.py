@@ -136,6 +136,7 @@ class TransformerTrainer(AbstractTrainer):
         total_nll = 0.0
         total_tokens = 0
         total_batches = 0
+        batch_losses = []  # Track individual batch losses
         
         val_iterator = batchify_text(val_data, batch_size=self.batch_size, shuffle=False)
         
@@ -156,6 +157,9 @@ class TransformerTrainer(AbstractTrainer):
                 loss_sum = loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
             
             num_valid_tokens = (y.view(-1) != self.pad_token_id).sum().item()
+            batch_loss = loss_sum.item() / num_valid_tokens if num_valid_tokens > 0 else 0.0
+            
+            batch_losses.append(batch_loss)
             total_nll += loss_sum.item()
             total_tokens += num_valid_tokens
             total_batches += 1
@@ -167,8 +171,14 @@ class TransformerTrainer(AbstractTrainer):
         
         avg_val_loss = total_nll / total_tokens
         
-        # DEBUG: Log validation loss computation details
-        print(f"[VAL LOSS DEBUG] total_batches={total_batches}, total_tokens={total_tokens}, total_nll={total_nll:.4f}, avg_loss={avg_val_loss:.6f}")
+        # DEBUG: Detailed validation loss diagnostics
+        min_batch_loss = min(batch_losses) if batch_losses else float('inf')
+        max_batch_loss = max(batch_losses) if batch_losses else float('inf')
+        avg_batch_loss = sum(batch_losses) / len(batch_losses) if batch_losses else 0.0
+        
+        print(f"[VAL DEBUG] Batches: {total_batches} | Total tokens: {total_tokens}")
+        print(f"[VAL DEBUG] Batch losses: min={min_batch_loss:.6f}, max={max_batch_loss:.6f}, avg={avg_batch_loss:.6f}")
+        print(f"[VAL DEBUG] Final val loss: {avg_val_loss:.6f} (total_nll={total_nll:.2f} / tokens={total_tokens})")
         
         return avg_val_loss
     
@@ -295,6 +305,8 @@ class TransformerTrainer(AbstractTrainer):
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                 val_perplexity = math.exp(val_loss) if val_loss != float('inf') else float('inf')
+                # DEBUG: Print epoch summary
+                print(f"\n[EPOCH {epoch+1}] Train loss: {avg_loss:.6f} | Val loss: {val_loss:.6f} | Ratio: {val_loss/avg_loss:.2f}x\n")
             else:
                 val_loss = None
                 val_perplexity = None
