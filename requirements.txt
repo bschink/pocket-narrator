@@ -34,5 +34,5 @@ pytest-mock
 # logging
 wandb
 
-# mamba implementation
-mamba_ssm
+# mamba implementation (requires NVIDIA GPU with CUDA - won't work on macOS)
+# mamba_ssm
