@@ -3,7 +3,7 @@ Unit tests for the trainers package.
 """
 import pytest
 import torch
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from pocket_narrator.trainers import get_trainer
 from pocket_narrator.trainers.base_trainer import AbstractTrainer
@@ -84,7 +84,8 @@ def test_transformer_trainer_calculate_validation_loss(simple_trainer):
     assert isinstance(loss, float)
     assert loss > 0.0
 
-def test_transformer_trainer_train_method_updates_weights():
+@patch('pocket_narrator.trainers.transformer_trainer.wandb')
+def test_transformer_trainer_train_method_updates_weights(mock_wandb):
     """
     Integration test verifying that the model's weights actually change.
     """
