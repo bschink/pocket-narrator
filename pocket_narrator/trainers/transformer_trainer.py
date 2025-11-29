@@ -153,7 +153,7 @@ class TransformerTrainer(AbstractTrainer):
                 amp_ctx = nullcontext()
 
             with amp_ctx:
-                logits, _ = model(x, mask=causal_mask, use_cache=False)
+                logits, _ = model(x, mask=causal_mask, use_cache=False, is_causal=False)
                 loss_sum = loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
             
             num_valid_tokens = (y.view(-1) != self.pad_token_id).sum().item()
@@ -221,7 +221,7 @@ class TransformerTrainer(AbstractTrainer):
 
         # forward pass with causal mask (same as validation)
         with amp_ctx:
-            out = model(input_batch, mask=causal_mask)
+            out = model(input_batch, mask=causal_mask, is_causal=False)
 
             # model might return (logits, cache) or just logits
             if isinstance(out, tuple):
