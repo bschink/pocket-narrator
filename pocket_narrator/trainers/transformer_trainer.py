@@ -182,16 +182,22 @@ class TransformerTrainer(AbstractTrainer):
         
         return avg_val_loss
     
-    def compute_batch_loss(self, model, tokenizer, train_data: List[str], loss_fn: nn.Module) -> torch.Tensor:
+    def compute_batch_loss(self, model, tokenizer, batch_text: List[str], loss_fn: nn.Module) -> torch.Tensor:
         """
-        Sample one random batch from train_data and compute cross-entropy loss.
+        Compute cross-entropy loss for a batch of text.
         Uses the same loss function as validation for consistency.
+        Applies causal masking to enforce autoregressive constraint.
+        
+        Args:
+            model: The transformer model
+            tokenizer: The tokenizer
+            batch_text: List of text strings for this batch
+            loss_fn: The loss function (CrossEntropyLoss with reduction='sum')
         """
         max_len = model.config["max_len"]
-
-        # get a random batch of text
-        batch_iterator = batchify_text(train_data, batch_size=self.batch_size, shuffle=True)
-        batch_text = next(batch_iterator)
+        
+        # Create causal mask to prevent attending to future tokens
+        causal_mask = torch.triu(torch.ones(max_len, max_len) * float('-inf'), diagonal=1).to(self.device)
 
         # tokenize and prepare for LM
         batch_tokens = tokenizer.encode_batch(batch_text)
@@ -207,9 +213,9 @@ class TransformerTrainer(AbstractTrainer):
         else:
             amp_ctx = nullcontext()
 
-        # forward pass
+        # forward pass with causal mask (same as validation)
         with amp_ctx:
-            out = model(input_batch)
+            out = model(input_batch, mask=causal_mask)
 
             # model might return (logits, cache) or just logits
             if isinstance(out, tuple):
@@ -266,11 +272,14 @@ class TransformerTrainer(AbstractTrainer):
             model.train()
             total_loss = 0.0
 
+            # Shuffle training data once per epoch and iterate through batches
+            batch_iterator = batchify_text(train_data, batch_size=self.batch_size, shuffle=True, seed=epoch)
+            
             pbar = tqdm(range(steps_per_epoch), desc=f"Epoch {epoch+1}/{self.epochs}")
-            for step_idx in pbar:
+            for step_idx, batch_text in zip(pbar, batch_iterator):
                 optimizer.zero_grad()
 
-                loss = self.compute_batch_loss(model, tokenizer, train_data, loss_fn)
+                loss = self.compute_batch_loss(model, tokenizer, batch_text, loss_fn)
                 loss.backward()
 
                 # Compute gradient norm before clipping
