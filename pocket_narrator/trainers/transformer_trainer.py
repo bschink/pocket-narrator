@@ -182,7 +182,7 @@ class TransformerTrainer(AbstractTrainer):
         
         return avg_val_loss
     
-    def compute_batch_loss(self, model, tokenizer, batch_text: List[str], loss_fn: nn.Module) -> torch.Tensor:
+    def compute_batch_loss(self, model, tokenizer, batch_text: List[str], loss_fn: nn.Module) -> tuple:
         """
         Compute cross-entropy loss for a batch of text.
         Uses the same loss function as validation for consistency.
@@ -193,6 +193,12 @@ class TransformerTrainer(AbstractTrainer):
             tokenizer: The tokenizer
             batch_text: List of text strings for this batch
             loss_fn: The loss function (CrossEntropyLoss with reduction='sum')
+            
+        Returns:
+            tuple: (loss_sum_for_backprop, raw_loss_sum, num_valid_tokens)
+                - loss_sum_for_backprop: normalized loss for backward pass
+                - raw_loss_sum: unnormalized sum of losses
+                - num_valid_tokens: number of valid tokens in batch
         """
         max_len = model.config["max_len"]
         
@@ -205,7 +211,7 @@ class TransformerTrainer(AbstractTrainer):
 
         if input_batch is None:
             # degenerate case: all sequences too short
-            return torch.tensor(0.0, device=self.device, requires_grad=True)
+            return torch.tensor(0.0, device=self.device, requires_grad=True), 0.0, 0
 
         # choose AMP or no AMP
         if self.use_amp and self.device == "cuda":
@@ -226,14 +232,18 @@ class TransformerTrainer(AbstractTrainer):
             # Use the same CrossEntropyLoss as validation
             loss_sum = loss_fn(logits.view(-1, logits.size(-1)), target_batch.view(-1))
             
-            # Normalize by number of valid (non-padded) tokens
+            # Get number of valid (non-padded) tokens
             num_valid_tokens = (target_batch.view(-1) != self.pad_token_id).sum().item()
+            
             if num_valid_tokens > 0:
-                loss = loss_sum / num_valid_tokens
+                # Normalize for backprop
+                normalized_loss = loss_sum / num_valid_tokens
             else:
-                loss = torch.tensor(0.0, device=self.device, requires_grad=True)
+                normalized_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
+                loss_sum = torch.tensor(0.0, device=self.device)
+                num_valid_tokens = 0
 
-        return loss
+        return normalized_loss, loss_sum.item() if isinstance(loss_sum, torch.Tensor) else loss_sum, num_valid_tokens
 
 
     def train(self, model: AbstractLanguageModel, tokenizer, train_data: List[str], val_data: List[str] = None, batch_size: int = None) -> AbstractLanguageModel:
@@ -270,7 +280,8 @@ class TransformerTrainer(AbstractTrainer):
         # --- Training Loop ---
         for epoch in range(self.epochs):
             model.train()
-            total_loss = 0.0
+            total_loss_sum = 0.0
+            total_tokens = 0
 
             # Shuffle training data once per epoch and iterate through batches
             batch_iterator = batchify_text(train_data, batch_size=self.batch_size, shuffle=True, seed=epoch)
@@ -279,8 +290,9 @@ class TransformerTrainer(AbstractTrainer):
             for step_idx, batch_text in zip(pbar, batch_iterator):
                 optimizer.zero_grad()
 
-                loss = self.compute_batch_loss(model, tokenizer, batch_text, loss_fn)
-                loss.backward()
+                # Get loss components from batch
+                normalized_loss, raw_loss_sum, num_valid_tokens = self.compute_batch_loss(model, tokenizer, batch_text, loss_fn)
+                normalized_loss.backward()
 
                 # Compute gradient norm before clipping
                 grad_norm = None
@@ -290,12 +302,14 @@ class TransformerTrainer(AbstractTrainer):
                 optimizer.step()
                 scheduler.step()
 
-                total_loss += loss.item()
+                # Accumulate raw loss sum and token count (same as validation does)
+                total_loss_sum += raw_loss_sum
+                total_tokens += num_valid_tokens
 
                 # --- wandb dynamic log with LR and gradient norm ---
                 log_dict = {
-                    "train/loss": loss.item(),
-                    "train/perplexity": math.exp(loss.item()),
+                    "train/loss": normalized_loss.item(),
+                    "train/perplexity": math.exp(normalized_loss.item()),
                     "train/lr": scheduler.get_last_lr()[0],
                 }
                 
@@ -304,9 +318,10 @@ class TransformerTrainer(AbstractTrainer):
                     log_dict["train/grad_norm"] = grad_norm.item() if torch.is_tensor(grad_norm) else grad_norm
                 
                 wandb.log(log_dict)
-                pbar.set_postfix({"loss": loss.item()})
+                pbar.set_postfix({"loss": normalized_loss.item()})
 
-            avg_loss = total_loss / steps_per_epoch
+            # Compute epoch average loss (normalize by total tokens, matching validation)
+            avg_loss = total_loss_sum / total_tokens if total_tokens > 0 else 0.0
 
             # Compute validation loss if val_data is provided
             if val_data is not None:

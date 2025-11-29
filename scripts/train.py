@@ -368,11 +368,11 @@ def main():
 
     # tokenizer info
     try:
-        extra_cfg["tokenizer.path"] = tokenizer_path
+        extra_cfg["tokenizer/path"] = tokenizer_path
         extra_cfg["tokenizer/vocab_size"] = tokenizer.get_vocab_size()
         extra_cfg["tokenizer/special_tokens"] = getattr(tokenizer, "special_token_names", None)
-        extra_cfg["model.n"] = model_config.get("n", None)
-        extra_cfg["trainer.lr_schedule"] = "cosine_with_warmup"
+        extra_cfg["model/n"] = model_config.get("n", None)
+        extra_cfg["trainer/lr_schedule"] = "cosine_with_warmup"
         extra_cfg["device"] = model.device
 
 
