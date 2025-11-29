@@ -427,7 +427,9 @@ def main():
     val_inputs, target_tokens_batch = prepare_batch(val_batch_text, tokenizer)
 
     if trainer_type == "transformer":
-        val_loss = trainer.calculate_validation_loss(model, tokenizer, val_lines)
+        import torch.nn as nn
+        loss_fn = nn.CrossEntropyLoss(ignore_index=pad_token_id, reduction='sum')
+        val_loss = trainer.calculate_validation_loss(model, tokenizer, val_lines, loss_fn)
     else:
         val_loss = None # NGram doesn't support this  
 
