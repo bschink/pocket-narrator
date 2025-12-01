@@ -312,15 +312,15 @@ def main():
     else:
         print("INFO: Using pre-existing/loaded tokenizer.")
 
-    eos_token_id = tokenizer.token_to_id("<|eos|>")
+    eos_token_id = tokenizer.token_to_id("<|endoftext|>")
     if eos_token_id is None:
-        eos_token_id = tokenizer.token_to_id("<eos>")
+        eos_token_id = tokenizer.token_to_id("<|endoftext|>")
     if eos_token_id is None:
-        print("WARNING: No <|eos|> token found in tokenizer.")
+        print("WARNING: No <|endoftext|> token found in tokenizer.")
 
     pad_token_id = tokenizer.token_to_id("<|pad|>")
     if pad_token_id is None:
-        pad_token_id = tokenizer.token_to_id("<pad>")
+        pad_token_id = tokenizer.token_to_id("<|pad|>")
     if pad_token_id is None:
         print("WARNING: No <|pad|> token found in tokenizer. Padding may not work correctly.")
 
