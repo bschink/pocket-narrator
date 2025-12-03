@@ -39,6 +39,7 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         dropout = kwargs.get('dropout', 0.1)
         pos_encoding_type = kwargs.get("pos_encoding_type", "sinusoidal")
         attention_type = kwargs.get("attention_type", "multi_head")
+        activation_type = kwargs.get("activation_type", "gelu")
 
         # positional encodings
         additive_pos_encoding = None
@@ -59,14 +60,14 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
             else:
                 raise ValueError(f"Unknown attention_type: {attention_type}")
             
-            blocks.append(TransformerBlock(d_model, attention_module, dropout))
+            blocks.append(TransformerBlock(d_model, attention_module, dropout, activation_type=activation_type))
 
         # store configuration
         config = {
             "model_type": "transformer", "vocab_size": vocab_size, "d_model": d_model,
             "n_layers": n_layers, "n_head": n_head, "max_len": max_len, "dropout": dropout,
-            "pos_encoding_type": pos_encoding_type, "attention_type": attention_type,
-            "eos_token_id": kwargs.get("eos_token_id")
+            "pos_encoding_type": pos_encoding_type, "attention_type": attention_type, 
+            "activation_type": activation_type, "eos_token_id": kwargs.get("eos_token_id")
         }
         
         return cls(vocab_size, blocks, config, pos_encoding_module=additive_pos_encoding)

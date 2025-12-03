@@ -216,6 +216,7 @@ def main():
                 "dropout": cfg["model"].get("dropout", 0.1),
                 "pos_encoding_type": cfg["model"].get("pos_encoding_type", "sinusoidal"),
                 "attention_type": cfg["model"].get("attention_type", "multi_head"),
+                "activation_type": cfg["model"].get("activation_type", "gelu"),
             }
 
         trainer_type = cfg["trainer"]["type"]
