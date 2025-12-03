@@ -1,0 +1,18 @@
+name: train_medium
+model_config: configs/models/gpt2_medium.yaml
+tokenizer_config: configs/tokenizers/tinystories_10k.yaml
+
+training_args:
+  output_dir: ./results/gpt2_medium
+  overwrite_output_dir: true
+  num_train_epochs: 3
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  evaluation_strategy: steps
+  eval_steps: 100
+  save_steps: 500
+  logging_steps: 50
+  learning_rate: 5.0e-4
+  warmup_steps: 100
+  save_total_limit: 2
+  fp16: false

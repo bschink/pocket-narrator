@@ -1,0 +1,12 @@
+name: tinystories_4k
+type: bpe
+dataset:
+  hf_dataset: roneneldan/TinyStories
+  config: default
+  split: train
+  num_rows: 100
+  offset: 0
+vocab_size: 4096
+block_size: 128
+save_dir: ./tokenizers/tinystories_4k
+lm_dataset_dir: ./lm_dataset/tinystories_4k

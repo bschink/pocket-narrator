@@ -1,0 +1,14 @@
+name: tinystories_10k
+type: bpe
+
+dataset:
+  hf_dataset: roneneldan/TinyStories
+  config: default
+  split: train
+  num_rows: 10000
+  offset: 0
+
+vocab_size: 10000
+block_size: 128
+save_dir: ./tokenizers/tinystories_10k
+lm_dataset_dir: ./lm_dataset/tinystories_10k
