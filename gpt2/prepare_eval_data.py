@@ -8,11 +8,11 @@ def main():
     data_dir = base_dir / "data"
     data_dir.mkdir(exist_ok=True)
 
-    # TinyStories laden
+    # TinyStories 
     print("Loading TinyStories...")
     ds = load_dataset("roneneldan/TinyStories", "default", split="train")
 
-    # wie viele Beispiele für Eval?
+    # How many examples of evaluation 
     num_examples = 100
     ds = ds.select(range(num_examples))
 
@@ -25,8 +25,8 @@ def main():
         for i, ex in enumerate(ds):
             full = ex["text"].strip()
 
-            # ganz simple Heuristik: erste "Satzhälfte" als Prompt
-            # (bis zum ersten Punkt)
+            # Very simple heuristic: use the first "sentence half" as a promp
+            # (up to the first period)
             parts = full.split(".")
             first = parts[0].strip()
             if not first:
@@ -34,7 +34,7 @@ def main():
             if not first.endswith("."):
                 first += "."
 
-            prompt = first  # du kannst auch "Continue the story: ..." davor setzen
+            prompt = first  #  we can also add "Continue the story: ..." before it.
             reference = full.replace("\n", " ").strip()
 
             f_p.write(prompt + "\n")

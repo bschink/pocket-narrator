@@ -19,7 +19,7 @@ class TextGenatate:
         self.save_dir = Path(self.cfg["save_dir"])
         self.lm_dataset_dir = Path(self.cfg["lm_dataset_dir"])
 
-        # 1) TinyStories aus HF laden
+        # 1) Download TinyStories from HF
         full_ds = load_dataset(
             ds_cfg["hf_dataset"],
             ds_cfg["config"],
@@ -33,7 +33,7 @@ class TextGenatate:
         print("Sample from corpus:")
         print(texts[0][:500])
 
-        # 2) BPE-Tokenizer trainieren oder laden
+        # 2) Train or load BPE tokenizer
         tokenizer_path_exists = (self.save_dir / "tokenizer.json").exists()
         if tokenizer_path_exists:
             print(f"Loading existing BPE tokenizer from {self.save_dir}")
@@ -49,14 +49,14 @@ class TextGenatate:
                 save_dir=self.save_dir,
             )
 
-        # 3) (optional) Dummy model für device-Check, wird im Trainer neu gebaut
+        # 3) (Optional) Dummy model for device check, will be rebuilt in the trainer.
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Using device: {self.device}")
 
-        # Wrap HF Dataset für Tokenization
+        # Wrap HF Dataset for Tokenization
         self.row_data = Dataset.from_dict({"text": texts})
 
-    # Tokenizer-Funktion
+    # Tokenizer-Function
     def tokenize_function(self, examples):
         return self.tokenizer(
             examples["text"],

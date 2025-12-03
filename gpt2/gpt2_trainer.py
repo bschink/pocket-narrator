@@ -25,14 +25,14 @@ class Training:
         model_cfg = load_yaml(self.train_cfg["model_config"])
         tok_cfg = load_yaml(self.train_cfg["tokenizer_config"])
 
-        # 1) LM-Dataset laden
+        # 1) LM-Dataset 
         self.lm_dataset_dir = Path(tok_cfg["lm_dataset_dir"])
         self.lm_dataset = load_from_disk(str(self.lm_dataset_dir))
 
-        # 2) BPE-Tokenizer laden
+        # 2) BPE-Tokenizer 
         self.tokenizer = load_bpe_tokenizer(tok_cfg["save_dir"])
 
-        # 3) GPT-2-Config von scratch mit passender vocab_size
+        # 3) GPT-2-Config from scratch with appropriate vocab_size
         vocab_size = self.tokenizer.vocab_size
         print(f"Tokenizer vocab_size = {vocab_size}")
 
@@ -47,7 +47,7 @@ class Training:
 
         self.model = GPT2LMHeadModel(gpt2_config)
 
-        # 4) Device wählen
+        # 4) Select device
         if torch.cuda.is_available():
             device = torch.device("cuda")
             print("Using CUDA")
@@ -59,21 +59,21 @@ class Training:
             print("Using CPU")
         self.model.to(device)
 
-        # 5) TrainingArguments aus YAML -> aber nur erlaubte Keys übergeben
+        # 5) Training arguments from YAML -> but only allow keys to be passed
         ta = self.train_cfg["training_args"]
 
-        # alle möglichen Argumentnamen für deine transformers-Version holen
+        # Get all possible argument names for the Transformers version
         sig = inspect.signature(TrainingArguments.__init__)
         allowed_params = set(sig.parameters.keys())
 
-        # Basis-kwargs, die wir gerne hätten:
+        # Basic wargs that we would like to have:
         base_kwargs = {
             "output_dir": ta["output_dir"],
             "overwrite_output_dir": ta["overwrite_output_dir"],
             "num_train_epochs": ta["num_train_epochs"],
             "per_device_train_batch_size": ta["per_device_train_batch_size"],
             "per_device_eval_batch_size": ta["per_device_eval_batch_size"],
-            # moderne Versionen:
+            # moderne Version:
             "evaluation_strategy": ta.get("evaluation_strategy", "steps"),
             "eval_steps": ta.get("eval_steps", 100),
             "save_steps": ta["save_steps"],
@@ -86,16 +86,16 @@ class Training:
             "report_to": ta.get("report_to", "wandb"),
         }
 
-        # auf erlaubte Parameter filtern
+        # Filter by allowed parameters
         kwargs = {k: v for k, v in base_kwargs.items() if k in allowed_params}
 
-        # Fallback für ältere transformers-Versionen ohne evaluation_strategy:
+        # Fallback for older transformers versions without evaluation_strategy:
         if (
             "evaluation_strategy" not in allowed_params
             and "eval_steps" in base_kwargs
             and "do_eval" in allowed_params
         ):
-            # aktivier Eval während des Trainings
+            # Activate Eval during training
             kwargs["do_eval"] = True
 
         self.training_args = TrainingArguments(**kwargs)

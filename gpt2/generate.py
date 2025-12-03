@@ -29,11 +29,11 @@ def generate(
             attention_mask=attention_mask,
             max_length=input_ids.shape[1] + max_new_tokens,
             do_sample=True,
-            temperature=0.8,          # etwas kühler
+            temperature=0.8,          
             top_k=50,
             top_p=0.9,
-            no_repeat_ngram_size=3,   # verhindert 3-gram Wiederholungen
-            repetition_penalty=1.2,   # bestraft Wiederholung
+            no_repeat_ngram_size=3,   # prevents 3-gram repetitions
+            repetition_penalty=1.2,   # Repeat punished for repetition
             pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
             eos_token_id=tokenizer.eos_token_id,
         )
