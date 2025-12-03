@@ -7,13 +7,13 @@ diversity, and linguistic properties.
 Usage:
     PYTHONPATH=. python3 scripts/evaluate_dataset.py \
       --data data/processed/TinyStories/TinyStories-train.bos_eos.txt \
-      --check_grammar
+      --check_grammar \
       --batch_size 512
 
     PYTHONPATH=. python3 scripts/evaluate_dataset.py \
       --data data/raw/TinyStories/TinyStories-train.txt \
       --no_check_grammar \
-      --sample_size 10000
+      --sample_size 10000 \
       --batch_size 256
 """
 import sys
@@ -117,7 +117,7 @@ def main():
         if torch.cuda.is_available():
             device = "cuda"
         elif torch.backends.mps.is_available():
-            device = "mps"  # Force CPU to avoid MPS memory issues
+            device = "mps"
         else:
             device = "cpu"
         
