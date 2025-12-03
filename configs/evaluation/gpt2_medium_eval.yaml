@@ -1,8 +1,8 @@
 model_dir: results/gpt2_medium/model
 tokenizer_dir: results/gpt2_medium/tokenizer
 
-prompts_file: data/prompts.txt
-references_file: data/references.txt
+prompts_file: ./data/prompts.txt
+references_file: ./data/references.txt
 
 max_gen_length: 128
 device: mps        # oder "cpu" / "cuda"
