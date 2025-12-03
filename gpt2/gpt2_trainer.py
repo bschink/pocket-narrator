@@ -82,6 +82,8 @@ class Training:
             "warmup_steps": ta["warmup_steps"],
             "save_total_limit": ta["save_total_limit"],
             "fp16": ta["fp16"],
+            # Enable wandb logging
+            "report_to": ta.get("report_to", "wandb"),
         }
 
         # auf erlaubte Parameter filtern
