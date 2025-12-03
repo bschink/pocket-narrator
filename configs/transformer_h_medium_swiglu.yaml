@@ -13,7 +13,7 @@
 #
 # ============================================================================
 
-run_name: "transformer_h_medium"
+run_name: "transformer_h_medium_swiglu"
 
 # ============================================================================
 # DATA CONFIGURATION
@@ -113,7 +113,7 @@ model:
   # Activation function type in feed-forward layers: "gelu" or "swiglu"
   # gelu: Gaussian Error Linear Unit (standard)
   # swiglu: SiLU Gated Linear Unit (LLaMA-style, more efficient)
-  activation_type: "gelu"
+  activation_type: "swiglu"
   
   # ========== N-GRAM MODEL PARAMETERS ==========
   # (Only used when type: "ngram")
