@@ -126,14 +126,14 @@ class LinearAttention(AbstractAttention):
             
             # update state: S_t = S_{t-1} + phi(k_t)^T * v_t
             # outer product: (B,H,D,1) @ (B,H,1,D) -> (B,H,D,D)
-            kv_outer = torch.matmul(k_t.unsqueeze(-1), v_t.unsqueeze(-2))
+            kv_outer = torch.einsum('bhd,bhe->bhde', k_t, v_t)
             
             current_S = prev_S + kv_outer
             current_Z = prev_Z + k_t
             
             # compute output: O_t = (phi(q_t) * S_t) / (phi(q_t) * Z_t)
             # numerator: (B, H, 1, D) @ (B, H, D, D) -> (B, H, 1, D)
-            numerator = torch.matmul(q_t.unsqueeze(2), current_S).squeeze(2)
+            numerator = torch.einsum('bhd,bhde->bhe', q_t, current_S)
             
             # denominator: dot product (B, H, D) . (B, H, D) -> (B, H, 1)
             denominator = (q_t * current_Z).sum(dim=-1, keepdim=True)
@@ -144,32 +144,43 @@ class LinearAttention(AbstractAttention):
             present = (current_S, current_Z)
             
         else:
-            # --- TRAINING MODE (Cumulative Sum) ---
-            # formula: O_i = (Q_i * sum_{j<=i}(K_j^T V_j)) / (Q_i * sum_{j<=i}(K_j^T))
+            # --- TRAINING MODE (Iterative/Scan) ---
+            # memory-efficient implementation that avoids materializing (B, H, L, D, D) tensors
+            # formula: O_i = (Q_i @ S_i) / (Q_i @ Z_i), where S_i = sum_{j<=i}(K_j^T V_j)
             
-            Z = torch.cumsum(K, dim=2) # (B, H, L, D)
+            device = Q.device
+            dtype = Q.dtype
             
-            k_expanded = K.unsqueeze(-1) # (B, H, L, D, 1)
-            v_expanded = v.unsqueeze(-2) # (B, H, L, 1, D)
+            # S: running sum of outer products K^T @ V, shape (B, H, D, D)
+            # Z: running sum of K, shape (B, H, D)
+            S = torch.zeros(batch_size, self.n_head, self.d_k, self.d_k, device=device, dtype=dtype)
+            Z = torch.zeros(batch_size, self.n_head, self.d_k, device=device, dtype=dtype)
             
-            kv_outer = torch.matmul(k_expanded, v_expanded)
-            S = torch.cumsum(kv_outer, dim=2)
+            outputs = []
             
-            # Numerator: Q * S
-            # Q: (B, H, L, D) -> (B, H, L, 1, D)
-            # S: (B, H, L, D, D)
-            # matmul treats the last two dims as matrices, broadcasts over B,H,L
-            # (1, D) @ (D, D) -> (1, D)
-            numerator = torch.matmul(Q.unsqueeze(-2), S).squeeze(-2)
+            for t in range(seq_len):
+                k_t = K[:, :, t, :]
+                v_t = v[:, :, t, :]
+                q_t = Q[:, :, t, :]
+                
+                # update state: S += k_t outer v_t
+                # (B,H,D) x (B,H,D) -> (B,H,D,D)
+                S = S + torch.einsum('bhd,bhe->bhde', k_t, v_t)
+                Z = Z + k_t
+                
+                # compute output for this position
+                # numerator: q_t @ S -> (B, H, D)
+                numerator = torch.einsum('bhd,bhde->bhe', q_t, S)
+                # denominator: q_t dot Z -> (B, H, 1)
+                denominator = (q_t * Z).sum(dim=-1, keepdim=True)
+                
+                o_t = numerator / (denominator + 1e-6)
+                outputs.append(o_t)
             
-            # denominator: Q dot Z
-            denominator = (Q * Z).sum(dim=-1, keepdim=True)
+            # stack outputs: list of (B, H, D) -> (B, H, L, D)
+            y = torch.stack(outputs, dim=2)
             
-            y = numerator / (denominator + 1e-6)
-            
-            final_S = S[:, :, -1, :, :]
-            final_Z = Z[:, :, -1, :]
-            present = (final_S, final_Z)
+            present = (S, Z)
 
         y = y.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
         return self.out_proj(y), present
