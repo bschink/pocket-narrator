@@ -1,0 +1,10 @@
+name: gpt2_small
+arch: gpt2_from_scratch
+tokenizer_config: configs/tokenizers/tinystories_8k.yaml
+
+# GPT-2 style architecture
+n_layer: 6
+n_head: 8
+n_embd: 512
+n_positions: 256
+n_ctx: 256

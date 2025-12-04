@@ -1,3 +1,4 @@
+# gpt2_trainer.py
 from pathlib import Path
 from transformers import DataCollatorForLanguageModeling
 from config_utils import load_yaml

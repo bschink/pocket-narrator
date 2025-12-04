@@ -1,4 +1,4 @@
-# gpt2.py
+# gpt2.py  ---> our Model
 from pathlib import Path
 
 from datasets import Dataset, load_dataset

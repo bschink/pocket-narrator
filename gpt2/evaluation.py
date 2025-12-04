@@ -1,3 +1,4 @@
+#Evaluation.py
 #!/usr/bin/env python
 import argparse
 import json
@@ -82,14 +83,14 @@ def generate_texts(
 
 
 def _tokenize_for_metrics(text: str) -> List[str]:
-    # simpler Tokenisierung für Metriken
+    # simple Tokenizar for metrix
     return text.strip().split()
 
 
 def repetition_rate(text: str, n: int = 3) -> float:
     """
-    Anteil der n-Gramme, die mehr als einmal vorkommen.
-    0.0 = keine Wiederholung, 1.0 = alles nur Wiederholung.
+    Proportion of n-grams that occur more than once.
+    0.0 = no repitation, 1.0 = all of only repitition.
     """
     tokens = _tokenize_for_metrics(text)
     if len(tokens) < n + 1:
@@ -199,7 +200,7 @@ def compute_bertscore(
         print("bert_score not installed, skipping BERTScore.")
         return None
 
-    # BertScore erwartet Lists-of-strings
+    # BertScore expected Lists-of-strings
     P, R, F1 = bert_score(
         cands=hyps,
         refs=refs,
@@ -235,8 +236,8 @@ def parse_args() -> argparse.Namespace:
         help="Optional YAML file with evaluation settings.",
     )
 
-    # Die restlichen Argumente sind jetzt NICHT mehr required,
-    # weil sie durch eval-config überschrieben werden können.
+    # The remaining arguments are no longer required,
+    # because they can be overridden by eval-config.
     parser.add_argument(
         "--model-dir",
         type=str,
@@ -302,7 +303,7 @@ def main():
         cfg = load_yaml(args.eval_config)
 
     def get_cfg(key: str, cli_value, default=None):
-        # wenn CLI Wert gesetzt -> CLI gewinnt
+        # If CLI value is set -> CLI wins
         if cli_value is not None:
             return cli_value
         if cfg is not None and key in cfg:

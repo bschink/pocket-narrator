@@ -10,7 +10,7 @@ def main():
 
     # TinyStories 
     print("Loading TinyStories...")
-    ds = load_dataset("roneneldan/TinyStories", "default", split="train")
+    ds = load_dataset("roneneldan/TinyStories-1M", "default", split="train")
 
     # How many examples of evaluation 
     num_examples = 100

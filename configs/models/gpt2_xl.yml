@@ -1,5 +1,0 @@
-name: gpt2_xl
-hf_model_name: gpt2-xl
-tokenizer_config: configs/tokenizers/tinystories_10k.yaml
-block_size: 128
-use_fp16: false

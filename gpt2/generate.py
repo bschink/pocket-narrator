@@ -1,3 +1,4 @@
+# generate.py
 from transformers import GPT2LMHeadModel, PreTrainedTokenizerFast
 import torch
 from pathlib import Path

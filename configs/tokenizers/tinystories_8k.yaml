@@ -1,12 +1,14 @@
 name: tinystories_8k
 type: bpe
+
 dataset:
   hf_dataset: roneneldan/TinyStories
   config: default
   split: train
-  num_rows: 100
+  num_rows: 10000
   offset: 0
+  
 vocab_size: 8192
-block_size: 128
+block_size: 256
 save_dir: ./tokenizers/tinystories_8k
 lm_dataset_dir: ./lm_dataset/tinystories_8k

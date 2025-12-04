@@ -8,8 +8,8 @@ from gpt2_trainer import Training
 
 if __name__ == '__main__':
 
-    tokenizer_cfg = "configs/tokenizers/tinystories_10k.yaml"
-    train_cfg = "configs/training/training_medium.yaml"
+    tokenizer_cfg = "configs/tokenizers/tinystories_1M.yaml"
+    train_cfg = "configs/training/training_large_1M.yaml"
 
     # Initialize wandb BEFORE training starts
     wandb.init(
