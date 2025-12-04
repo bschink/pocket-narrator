@@ -144,43 +144,54 @@ class LinearAttention(AbstractAttention):
             present = (current_S, current_Z)
             
         else:
-            # --- TRAINING MODE (Iterative/Scan) ---
-            # memory-efficient implementation that avoids materializing (B, H, L, D, D) tensors
-            # formula: O_i = (Q_i @ S_i) / (Q_i @ Z_i), where S_i = sum_{j<=i}(K_j^T V_j)
+            # --- TRAINING MODE (Chunk-based parallel) ---
+            # process in chunks to balance memory vs speed
+            # each chunk computes the full (B, H, chunk, D, D) tensor, but chunk << L.
             
             device = Q.device
             dtype = Q.dtype
             
-            # S: running sum of outer products K^T @ V, shape (B, H, D, D)
-            # Z: running sum of K, shape (B, H, D)
-            S = torch.zeros(batch_size, self.n_head, self.d_k, self.d_k, device=device, dtype=dtype)
-            Z = torch.zeros(batch_size, self.n_head, self.d_k, device=device, dtype=dtype)
+            chunk_size = min(64, seq_len)
             
-            outputs = []
+            S_prev = torch.zeros(batch_size, self.n_head, self.d_k, self.d_k, device=device, dtype=dtype)
+            Z_prev = torch.zeros(batch_size, self.n_head, self.d_k, device=device, dtype=dtype)
             
-            for t in range(seq_len):
-                k_t = K[:, :, t, :]
-                v_t = v[:, :, t, :]
-                q_t = Q[:, :, t, :]
+            output_chunks = []
+            
+            for start in range(0, seq_len, chunk_size):
+                end = min(start + chunk_size, seq_len)
+                chunk_len = end - start
                 
-                # update state: S += k_t outer v_t
-                # (B,H,D) x (B,H,D) -> (B,H,D,D)
-                S = S + torch.einsum('bhd,bhe->bhde', k_t, v_t)
-                Z = Z + k_t
+                # (B, H, chunk_len, D)
+                Q_chunk = Q[:, :, start:end, :]
+                K_chunk = K[:, :, start:end, :]
+                v_chunk = v[:, :, start:end, :]
                 
-                # compute output for this position
-                # numerator: q_t @ S -> (B, H, D)
-                numerator = torch.einsum('bhd,bhde->bhe', q_t, S)
-                # denominator: q_t dot Z -> (B, H, 1)
-                denominator = (q_t * Z).sum(dim=-1, keepdim=True)
+                # (B, H, chunk_len, D)
+                Z_chunk_cumsum = torch.cumsum(K_chunk, dim=2)
                 
-                o_t = numerator / (denominator + 1e-6)
-                outputs.append(o_t)
+                # (B, H, chunk_len, D, D)
+                kv_outer = torch.einsum('bhld,bhle->bhlde', K_chunk, v_chunk)
+                S_chunk_cumsum = torch.cumsum(kv_outer, dim=2)
+                
+                # S_total[i] = S_prev + S_chunk_cumsum[i]
+                S_total = S_chunk_cumsum + S_prev.unsqueeze(2)
+                Z_total = Z_chunk_cumsum + Z_prev.unsqueeze(2)
+                
+                # O = (Q @ S) / (Q . Z)
+                numerator = torch.einsum('bhld,bhlde->bhle', Q_chunk, S_total)
+                denominator = (Q_chunk * Z_total).sum(dim=-1, keepdim=True)
+                
+                y_chunk = numerator / (denominator + 1e-6)
+                output_chunks.append(y_chunk)
+                
+                S_prev = S_total[:, :, -1, :, :]
+                Z_prev = Z_total[:, :, -1, :]
             
-            # stack outputs: list of (B, H, D) -> (B, H, L, D)
-            y = torch.stack(outputs, dim=2)
+            # (B, H, L, D)
+            y = torch.cat(output_chunks, dim=2)
             
-            present = (S, Z)
+            present = (S_prev, Z_prev)
 
         y = y.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
         return self.out_proj(y), present
