@@ -9,7 +9,7 @@ from typing import Optional, List, Tuple
 
 from ..base_model import AbstractLanguageModel
 from ..components.positional_encoding import SinusoidalPositionalEncoding, RotaryPositionalEncoding
-from .attention import MultiHeadSelfAttention
+from .attention import MultiHeadSelfAttention, LinearAttention
 from .transformer_block import TransformerBlock
 
 class TransformerModel(AbstractLanguageModel, nn.Module):
@@ -57,6 +57,9 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
         for _ in range(n_layers):
             if attention_type == "multi_head":
                 attention_module = MultiHeadSelfAttention(d_model, n_head, dropout, pos_encoding_module=rotary_pos_encoding)
+            elif attention_type == "linear":
+                # disable RoPE module passing for Linear Attention
+                attention_module = LinearAttention(d_model, n_head, dropout, pos_encoding_module=None)
             else:
                 raise ValueError(f"Unknown attention_type: {attention_type}")
             
@@ -134,14 +137,12 @@ class TransformerModel(AbstractLanguageModel, nn.Module):
             
             # with kv caching
             if use_cache:
-                # prefill
                 ctx_tokens = generated[-max_context_len:]
                 idx = torch.tensor([ctx_tokens], dtype=torch.long, device=device)
                 
                 logits, past_key_values = self.forward(idx, use_cache=True, is_causal=True)
                 next_token_logits = logits[:, -1, :]
                 
-                # generate tokens one at a time
                 for _ in range(max_new_tokens):
                     idx_next = self._sample_token(next_token_logits, strategy, temperature)
                     

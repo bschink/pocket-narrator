@@ -61,3 +61,115 @@ class MultiHeadSelfAttention(AbstractAttention):
         # concatenate heads and project back to d_model
         y = y.transpose(1, 2).contiguous().view(batch_size, seq_len, d_model)
         return self.out_proj(y), present
+    
+
+# linear attention according to "Transformers are RNNs: Fast Autoregressive Transformers with Linear Attention" (Katharopoulos et al., 2020)
+class LinearAttention(AbstractAttention):
+    def __init__(self, d_model: int, n_head: int, dropout: float = 0.1,
+                 pos_encoding_module: AbstractPositionalEncoding = None):
+        super().__init__()
+        assert d_model % n_head == 0, "d_model must be divisible by n_head"
+        self.d_k = d_model // n_head
+        self.n_head = n_head
+        self.d_model = d_model
+        
+        self.qkv_proj = nn.Linear(d_model, 3 * d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
+        self.dropout = nn.Dropout(dropout)
+        self.pos_encoding = pos_encoding_module
+        
+    def feature_map(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        The kernel function phi(x) = elu(x) + 1.
+        Ensures values are non-negative.
+        """
+        return F.elu(x) + 1.0
+
+    def forward(self, 
+                x: torch.Tensor, 
+                mask: torch.Tensor = None, 
+                layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+                is_causal: bool = True
+                ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        
+        batch_size, seq_len, _ = x.shape
+        
+        q, k, v = self.qkv_proj(x).chunk(3, dim=-1)
+        
+        # reshape: (batch, n_head, seq_len, d_k)
+        q = q.view(batch_size, seq_len, self.n_head, self.d_k).transpose(1, 2)
+        k = k.view(batch_size, seq_len, self.n_head, self.d_k).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.n_head, self.d_k).transpose(1, 2)
+
+        # ideally additive embeddings should be used before this layer
+        # but if a module is provided, we apply it for compatibility
+        if self.pos_encoding is not None:
+            offset = 0 
+            q = self.pos_encoding(q, offset=offset)
+            k = self.pos_encoding(k, offset=offset)
+
+        Q = self.feature_map(q)
+        K = self.feature_map(k)
+        
+        if layer_past is not None:
+            # --- INFERENCE MODE (RNN step) ---
+            # layer_past contains (S, Z)
+            # S: Sum of (phi(K) * V^T) [state matrix] (Batch, Head, D, D)
+            # Z: Sum of phi(K) [normalizer] (Batch, Head, D)
+
+            prev_S, prev_Z = layer_past
+            
+            # K, V, Q are currently (Batch, Head, 1, D)
+            k_t = K.squeeze(2) # (B, H, D)
+            v_t = v.squeeze(2) # (B, H, D)
+            q_t = Q.squeeze(2) # (B, H, D)
+            
+            # update state: S_t = S_{t-1} + phi(k_t)^T * v_t
+            # outer product: (B,H,D,1) @ (B,H,1,D) -> (B,H,D,D)
+            kv_outer = torch.matmul(k_t.unsqueeze(-1), v_t.unsqueeze(-2))
+            
+            current_S = prev_S + kv_outer
+            current_Z = prev_Z + k_t
+            
+            # compute output: O_t = (phi(q_t) * S_t) / (phi(q_t) * Z_t)
+            # numerator: (B, H, 1, D) @ (B, H, D, D) -> (B, H, 1, D)
+            numerator = torch.matmul(q_t.unsqueeze(2), current_S).squeeze(2)
+            
+            # denominator: dot product (B, H, D) . (B, H, D) -> (B, H, 1)
+            denominator = (q_t * current_Z).sum(dim=-1, keepdim=True)
+            
+            y = numerator / (denominator + 1e-6)
+            y = y.unsqueeze(2) # restore seq_len=1 dim: (B, H, 1, D)
+            
+            present = (current_S, current_Z)
+            
+        else:
+            # --- TRAINING MODE (Cumulative Sum) ---
+            # formula: O_i = (Q_i * sum_{j<=i}(K_j^T V_j)) / (Q_i * sum_{j<=i}(K_j^T))
+            
+            Z = torch.cumsum(K, dim=2) # (B, H, L, D)
+            
+            k_expanded = K.unsqueeze(-1) # (B, H, L, D, 1)
+            v_expanded = v.unsqueeze(-2) # (B, H, L, 1, D)
+            
+            kv_outer = torch.matmul(k_expanded, v_expanded)
+            S = torch.cumsum(kv_outer, dim=2)
+            
+            # Numerator: Q * S
+            # Q: (B, H, L, D) -> (B, H, L, 1, D)
+            # S: (B, H, L, D, D)
+            # matmul treats the last two dims as matrices, broadcasts over B,H,L
+            # (1, D) @ (D, D) -> (1, D)
+            numerator = torch.matmul(Q.unsqueeze(-2), S).squeeze(-2)
+            
+            # denominator: Q dot Z
+            denominator = (Q * Z).sum(dim=-1, keepdim=True)
+            
+            y = numerator / (denominator + 1e-6)
+            
+            final_S = S[:, :, -1, :, :]
+            final_Z = Z[:, :, -1, :]
+            present = (final_S, final_Z)
+
+        y = y.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
+        return self.out_proj(y), present
