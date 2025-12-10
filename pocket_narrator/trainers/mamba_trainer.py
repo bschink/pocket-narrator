@@ -15,10 +15,7 @@ from .base_trainer import AbstractTrainer
 
 
 
-
-
-
-class TransformerTrainer(AbstractTrainer):
+class MambaTrainer(AbstractTrainer):
 
     def train(
         self,
@@ -193,7 +190,7 @@ class TransformerTrainer(AbstractTrainer):
             expand=int(config.get("expand", 2)),
             max_seq_len=int(config.get("max_seq_len", 256)),
             dropout=float(config.get("dropout", 0.1)),
-            pad_token_id=config.get("pad_token_id"),
+            pad_token_id=int(config.get("pad_token_id", -100)),
         )
 
         saved = torch.load(model_path, map_location=model.device)

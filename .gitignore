@@ -232,3 +232,9 @@ tokenizers/*
 # wandb logging artifacts
 wandb/*
 !wandb/.gitkeep
+
+# gpt2 trained dataset, models & tokenizers
+Gpt2Model
+GPT2Tokenize
+lm_dataset
+results

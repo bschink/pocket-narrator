@@ -1,0 +1,19 @@
+name: train_large
+model_config: configs/models/gpt2_large.yaml
+tokenizer_config: configs/tokenizers/tinystories_1M.yaml
+
+training_args:
+  output_dir: ./results/gpt2_large
+  overwrite_output_dir: true
+  num_train_epochs: 4
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  evaluation_strategy: steps
+  eval_steps: 500
+  save_steps: 1000
+  logging_steps: 100
+  learning_rate: 3.0e-4 # Larger models should be a bit more conservative
+  warmup_steps: 1000
+  save_total_limit: 2
+  fp16: false
+  report_to: wandb

@@ -79,8 +79,10 @@ def test_transformer_trainer_calculate_validation_loss():
     
     val_data = ["a b c"]
     
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
+    
     # Act
-    loss = simple_trainer.calculate_validation_loss(model, tokenizer, val_data)
+    loss = simple_trainer.calculate_validation_loss(model, tokenizer, val_data, loss_fn)
     
     # Assert
     assert isinstance(loss, float)

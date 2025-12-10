@@ -1,6 +1,6 @@
 import pytest
 import torch
-from pocket_narrator.models.transformers.attention import MultiHeadSelfAttention
+from pocket_narrator.models.transformers.attention import MultiHeadSelfAttention, LinearAttention
 
 @pytest.fixture
 def attention_module():
@@ -85,3 +85,129 @@ def test_kv_caching_logic(attention_module):
     
     assert new_k.shape[2] == 4
     assert new_v.shape[2] == 4
+
+
+# ============== LinearAttention Tests ==============
+
+@pytest.fixture
+def linear_attention_module():
+    d_model = 64
+    n_head = 4
+    dropout = 0.1
+    return LinearAttention(d_model=d_model, n_head=n_head, dropout=dropout)
+
+
+def test_linear_attention_forward_pass_preserves_shape(linear_attention_module):
+    batch_size = 4
+    seq_len = 50
+    d_model = 64
+    input_tensor = torch.randn(batch_size, seq_len, d_model)
+    
+    output_tensor, present = linear_attention_module(input_tensor)
+    
+    assert output_tensor.shape == input_tensor.shape
+    assert isinstance(present, tuple)
+    assert len(present) == 2
+
+
+def test_linear_attention_feature_map_non_negative(linear_attention_module):
+    test_input = torch.randn(10, 10)
+    
+    output = linear_attention_module.feature_map(test_input)
+    
+    assert (output >= 0).all(), "Feature map should produce non-negative values"
+
+
+def test_linear_attention_causal_property(linear_attention_module):
+    linear_attention_module.eval()
+    batch_size = 2
+    seq_len = 5
+    d_model = 64
+    
+    input_1 = torch.randn(batch_size, seq_len, d_model)
+    input_2 = input_1.clone()
+    # modify position 3 (index 3)
+    input_2[:, 3, :] = torch.randn(d_model)
+
+    output_1, _ = linear_attention_module(input_1, is_causal=True)
+    output_2, _ = linear_attention_module(input_2, is_causal=True)
+
+    # position 2 should be unchanged since it can't see position 3
+    position_to_check = 2
+    assert torch.allclose(output_1[:, position_to_check, :], output_2[:, position_to_check, :], atol=1e-5)
+
+    # position 4 should be different since it can see position 3
+    position_after_change = 4
+    assert not torch.allclose(output_1[:, position_after_change, :], output_2[:, position_after_change, :])
+
+
+def test_linear_attention_eval_mode_deterministic(linear_attention_module):
+    linear_attention_module.eval()
+    input_tensor = torch.randn(2, 10, 64)
+
+    output_1, _ = linear_attention_module(input_tensor)
+    output_2, _ = linear_attention_module(input_tensor)
+    
+    assert torch.equal(output_1, output_2)
+
+
+def test_linear_attention_rnn_state_caching(linear_attention_module):
+    linear_attention_module.eval()
+    batch_size = 1
+    d_model = 64
+    n_head = 4
+    d_k = d_model // n_head
+    
+    x_prompt = torch.randn(batch_size, 3, d_model)
+    _, present_prompt = linear_attention_module(x_prompt)
+    
+    S, Z = present_prompt
+    assert S.shape == (batch_size, n_head, d_k, d_k)
+    assert Z.shape == (batch_size, n_head, d_k)
+    
+    x_gen = torch.randn(batch_size, 1, d_model)
+    output_gen, present_gen = linear_attention_module(x_gen, layer_past=present_prompt)
+    
+    new_S, new_Z = present_gen
+    
+    assert new_S.shape == (batch_size, n_head, d_k, d_k)
+    assert new_Z.shape == (batch_size, n_head, d_k)
+    assert output_gen.shape == (batch_size, 1, d_model)
+
+
+def test_linear_attention_sequential_vs_batch_equivalence(linear_attention_module):
+    linear_attention_module.eval()
+    batch_size = 1
+    seq_len = 4
+    d_model = 64
+    
+    x = torch.randn(batch_size, seq_len, d_model)
+    
+    output_batch, _ = linear_attention_module(x)
+    
+    outputs_sequential = []
+    layer_past = None
+    
+    for i in range(seq_len):
+        x_token = x[:, i:i+1, :]
+        output_token, layer_past = linear_attention_module(x_token, layer_past=layer_past)
+        outputs_sequential.append(output_token)
+    
+    output_sequential = torch.cat(outputs_sequential, dim=1)
+    
+    assert torch.allclose(output_batch, output_sequential, atol=1e-5), \
+        "Sequential processing with state caching should match batch processing"
+
+
+def test_linear_attention_different_sequence_lengths(linear_attention_module):
+    linear_attention_module.eval()
+    batch_size = 2
+    d_model = 64
+    
+    for seq_len in [1, 10, 50, 100]:
+        input_tensor = torch.randn(batch_size, seq_len, d_model)
+        output_tensor, present = linear_attention_module(input_tensor)
+        
+        assert output_tensor.shape == input_tensor.shape
+        assert isinstance(present, tuple)
+        assert len(present) == 2

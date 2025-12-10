@@ -1,0 +1,9 @@
+name: gpt2_large
+arch: gpt2-large
+tokenizer_config: configs/tokenizers/tinystories_10k.yaml
+
+n_layer: 16          
+n_head: 16           
+n_embd: 1024         
+n_positions: 256
+n_ctx: 256

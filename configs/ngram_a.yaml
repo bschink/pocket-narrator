@@ -109,6 +109,11 @@ model:
   
   # Attention type: "multi_head" (currently only option)
   attention_type: "multi_head"
+
+  # Activation function type in feed-forward layers: "gelu" or "swiglu"
+  # gelu: Gaussian Error Linear Unit (standard)
+  # swiglu: SiLU Gated Linear Unit (LLaMA-style, more efficient)
+  activation_type: "gelu"
   
   # ========== N-GRAM MODEL PARAMETERS ==========
   # (Only used when type: "ngram")
