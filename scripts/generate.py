@@ -21,11 +21,11 @@ How to Use:
 
     PYTHONPATH=. python3 scripts/generate.py \
     --prompt "Once upon a time there was a bear" \
-    --model_path models/transformer/transformer_20251127_170523.model \
+    --model_path models/transformer/transformer_20251204_021614.model \
     --generation_strategy sample \
     --temperature 0.9 \
     --tokenizer_type bpe \
-    --tokenizer_path tokenizers/bpe_tokenizer_1
+    --tokenizer_path tokenizers/bpe_tokenizer_1k_eigth
 
 
 """
