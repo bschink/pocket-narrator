@@ -1,0 +1,22 @@
+# configs/models/tinystories_33M.yaml
+name: TinyStories-33M
+arch: gpt_neo
+
+tokenizer_config: configs/tokenizers/tinystories_paper_10k.yaml
+
+n_embd: 768
+n_layer: 4
+n_head: 16
+
+n_positions: 256
+n_ctx: 512
+
+vocab_size: 10000
+
+activation_function: gelu_new
+attention_dropout: 0.0
+embed_dropout: 0.0
+resid_dropout: 0.0
+layer_norm_epsilon: 1.0e-5
+initializer_range: 0.02
+window_size: 256

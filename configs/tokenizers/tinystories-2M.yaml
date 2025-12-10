@@ -1,0 +1,19 @@
+name: tinystories_2M   # gpt_neo_125M
+arch: bpe
+
+
+dataset:
+  hf_dataset: roneneldan/TinyStories
+  config: default
+  split: train
+  num_rows: 2000000     # 2M stories
+  offset: 0
+
+vocab_size: 1000000
+block_size: 256 # must equal n_ctx
+save_dir: ./tokenizers/tinystories_2M
+lm_dataset_dir: ./lm_dataset/tinystories_2M
+      
+
+
+

@@ -1,4 +1,4 @@
-# gpt2.py  ---> our Model
+# gpt2.py  ---> our Model :  gpt2.py = tokenizer + dataset builder for a neural GPT-2 LM, not the model itself.
 from pathlib import Path
 
 from datasets import Dataset, load_dataset
@@ -7,6 +7,13 @@ import torch
 
 from config_utils import load_yaml
 from bpe_tokenizer_utils import train_bpe_tokenizer, load_bpe_tokenizer
+
+''' GPT2_SIZES  {
+    "small": dict(n_layer=12, n_head=12, n_embd=768),    # ~124M
+    "medium": dict(n_layer=24, n_head=16, n_embd=1024),  # ~355M
+    "large": dict(n_layer=36, n_head=20, n_embd=1280),   # ~774M
+    "xl": dict(n_layer=48, n_head=25, n_embd=1600),      # ~1.5B
+} '''
 
 
 class TextGenatate:

@@ -9,7 +9,7 @@ from gpt2_trainer import Training
 if __name__ == '__main__':
 
     tokenizer_cfg = "configs/tokenizers/tinystories_1M.yaml"
-    train_cfg = "configs/training/training_large_1M.yaml"
+    train_cfg = "configs/training/train_tinystories_1M.yaml"
 
     # Initialize wandb BEFORE training starts
     wandb.init(
@@ -25,13 +25,3 @@ if __name__ == '__main__':
     training.main()
 
     wandb.finish()
-
-
-
-
-    
-    #textGenerate = TextGenatate()
-    #textGenerate.main()
-
-    #training = Training()
-    #training.main()

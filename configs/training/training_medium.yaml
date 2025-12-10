@@ -1,6 +1,7 @@
 name: train_medium
 model_config: configs/models/gpt2_medium.yaml
-tokenizer_config: configs/tokenizers/tinystories_10k.yaml
+#tokenizer_config: configs/tokenizers/tinystories_10k.yaml
+tokenizer_config: configs/tokenizers/tinystories_1M.yaml
 
 training_args:
   output_dir: ./results/gpt2_medium

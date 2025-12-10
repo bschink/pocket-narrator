@@ -1,0 +1,26 @@
+# configs/tokenizers/tinystories_8M_tokenizer.yaml
+name: tinystories_8M_tokenizer
+arch: gpt_neo_bpe
+
+vocab_size: 10000
+special_tokens:
+  - "<pad>"
+  - "<bos>"
+  - "<eos>"
+  - "<unk>"
+
+window_size: 256
+n_positions: 256
+n_ctx: 512
+
+dataset:
+  hf_dataset: roneneldan/TinyStories
+  config: default
+  split: train
+  num_rows: 2141709
+  offset: 0
+
+block_size: 512
+
+save_dir: ./tokenizers/tinystories_9M
+lm_dataset_dir: ./lm_dataset/tinystories_9M

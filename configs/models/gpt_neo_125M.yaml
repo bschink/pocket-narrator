@@ -1,0 +1,17 @@
+# configs/models/gpt_neo_125M.yaml
+
+name: gpt_neo_125M
+arch: gpt_neo_from_scratch
+
+tokenizer_config: configs/tokenizers/tinystories_2M.yaml
+
+# GPT-Neo-125M style (analog EleutherAI)
+n_layer: 12
+n_head: 12
+n_embd: 768
+n_positions: 256
+n_ctx: 256
+
+# Optional defaults (safe)
+dropout: 0.0
+bias: true

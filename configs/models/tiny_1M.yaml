@@ -1,0 +1,26 @@
+# configs/models/tinystories_1M.yaml
+name: TinyStories-1M
+arch: gpt_neo
+
+tokenizer_config: configs/tokenizers/tinystories_paper_10k.yaml
+
+# Transformer-Architectur (of HF)
+n_embd: 64         # hidden_size
+n_layer: 8         # num_layers
+n_head: 16         # num_heads
+
+# context / Positionen
+n_positions: 256   # window_size / max local positions
+n_ctx: 512         # context length 
+
+# Vokabular (Paper-Setup)
+vocab_size: 10000
+
+# GPT-Neo-Parameter
+activation_function: gelu_new
+attention_dropout: 0.0
+embed_dropout: 0.0
+resid_dropout: 0.0
+layer_norm_epsilon: 1.0e-5
+initializer_range: 0.02
+window_size: 256

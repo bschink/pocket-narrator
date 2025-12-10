@@ -42,7 +42,7 @@ def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageMod
             device=kwargs.get("device", None)
         )
     elif model_type == "mamba":
-        from .mamba_model import MambaLanguageModel
+        from ...mamba.mamba_model import MambaLanguageModel
         return MambaLanguageModel(
             vocab_size=vocab_size,
             eos_token_id=kwargs.get("eos_token_id"),

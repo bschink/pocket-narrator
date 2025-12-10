@@ -6,10 +6,20 @@ dataset:
   config: default
   split: train
   #num_rows: 10000
-  num_rows: 50000     # when we actully train „large“  more Data than 10k
+  num_rows: 1000000     # 1M stories
   offset: 0
+  special_tokens:
+  - "<pad>"
+  - "<bos>"
+  - "<eos>"
+  - "<unk>"
+
+#Paper-Setup 
+window_size: 256
+n_positions: 256
+n_ctx: 512
 
 vocab_size: 1000000
-block_size: 512
+block_size: 256
 save_dir: ./tokenizers/tinystories_1M
 lm_dataset_dir: ./lm_dataset/tinystories_1M

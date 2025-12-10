@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from tqdm.auto import tqdm
 
-from pocket_narrator.models.mamba_model import SequenceDataset, collate_fn
+from mamba.mamba_model import SequenceDataset, collate_fn
 from pocket_narrator.models.base_model import AbstractLanguageModel
 from .base_trainer import AbstractTrainer
 
