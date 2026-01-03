@@ -7,7 +7,6 @@ from typing import Optional
 
 import torch
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
 from datasets import load_from_disk
 
 from pocket_narrator.models.mamba.mamba_model import MambaLM
