@@ -10,14 +10,13 @@ import torch
 from torch.utils.data import Dataset
 
 
-# ---------------------------------------------------------------------------
+
 # Seed helper
-# ---------------------------------------------------------------------------
+
 
 def set_seed(seed: int) -> None:
     """
-    Setzt Zufallssamen für Python, NumPy und PyTorch
-    für reproduzierbare Experimente.
+        Sets random seeds for Python, NumPy, and PyTorch for reproducible experiments.
     """
     random.seed(seed)
     np.random.seed(seed)
@@ -27,20 +26,15 @@ def set_seed(seed: int) -> None:
     # Für deterministischere Ergebnisse (kann Training etwas verlangsamen)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
-
-# ---------------------------------------------------------------------------
+    
 # HF Dataset Wrapper
-# ---------------------------------------------------------------------------
-
 class HFDatasetWrapper(Dataset):
     """
-    Wrappt ein HuggingFace Dataset (oder Dataset-Split),
-    so dass es mit einem PyTorch DataLoader benutzt werden kann.
-
-    Erwartet pro Beispiel mindestens 'input_ids'.
-    Optional: 'labels'. Falls 'labels' nicht existiert,
-    werden sie identisch zu 'input_ids' gesetzt.
+    Wraps a HuggingFace dataset (or dataset split)
+    so that it can be used with a PyTorch DataLoader.
+    Expects at least 'input_ids' per example.
+    Optional: 'labels'. If 'labels' does not exist,
+    they are set identically to 'input_ids'.
     """
 
     def __init__(
@@ -51,9 +45,9 @@ class HFDatasetWrapper(Dataset):
     ) -> None:
         """
         Args:
-            hf_dataset: Ein HuggingFace Dataset-Objekt oder ähnlicher Mapping-Typ.
-            input_key: Name der Spalte für Eingabesequenzen.
-            label_key: Name der Spalte für Zielsequenzen (Labels).
+            hf_dataset: HuggingFace Dataset-Object or Mapping-Typ.
+            input_key: Name the column for  input sequenzen.
+            label_key: Name the column  for goal sequenzen (Labels).
         """
         self.ds = hf_dataset
         self.input_key = input_key
