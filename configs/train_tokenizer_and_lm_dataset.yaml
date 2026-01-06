@@ -1,0 +1,32 @@
+# Config for training tokenizer + building LM dataset
+dataset:
+  hf_dataset: roneneldan/TinyStories
+  config: default
+  split: train
+  num_rows: null
+
+  # offline / local mode:
+  #local_text_file: ./data/tinystories/train.txt
+  text_key: text
+
+tokenizer:
+  vocab_size: 8192
+  min_frequency: 2
+  model_type: bpe
+  special_tokens:
+    - "<pad>"
+    - "<bos>"
+    - "<eos>"
+    - "<unk>"
+
+  num_samples: 100000
+  block_size: 256
+  save_dir: ./tokenizers/tinystories_8k
+  lm_dataset_dir: ./lm_dataset/tinystories_8k
+
+processing:
+  lowercase: false
+  strip_spaces: true
+
+seed: 42
+

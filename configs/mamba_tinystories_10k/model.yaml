@@ -1,0 +1,13 @@
+name: mamba_tinystories_10k
+vocab_size: 2576
+
+d_model: 128
+n_layers: 2
+seq_len: 256
+
+d_state: 16
+d_conv: 3
+expand: 2
+
+pad_token_id: 0
+dropout: 0.1
