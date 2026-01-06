@@ -1,0 +1,10 @@
+output_dir: ./results/mamba_tinystories_8M
+
+batch_size: 16          # we can try 64, reduce  8 -->16-->32--->64
+learning_rate: 3.0e-4
+weight_decay: 0.1
+num_train_epochs: 4
+
+grad_accum_steps: 1
+max_grad_norm: 1.0
+num_workers: 4

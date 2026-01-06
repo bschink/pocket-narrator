@@ -1,0 +1,11 @@
+output_dir: ./results/mamba_tinystories_18M
+
+batch_size: 32          # model is larger
+learning_rate: 3.0e-4
+weight_decay: 0.1
+num_train_epochs: 4
+
+grad_accum_steps: 1
+max_grad_norm: 1.0
+num_workers: 4
+

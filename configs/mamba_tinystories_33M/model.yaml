@@ -1,0 +1,10 @@
+name: mamba_tinystories_33M
+vocab_size: 10000
+d_model: 512
+n_layers: 8    # you can also try 12 like in the paper, but params go beyond ~33M with Mamba
+seq_len: 256
+d_state: 16
+d_conv: 4
+expand: 2
+pad_token_id: 0
+dropout: 0.0

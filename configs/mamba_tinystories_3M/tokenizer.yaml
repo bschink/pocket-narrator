@@ -1,0 +1,8 @@
+dataset_name: roneneldan/TinyStories
+split: train
+num_rows: 1000000      # 1M stories for 3M params model
+vocab_size: 10000
+block_size: 256
+
+tokenizer_dir: ./tokenizers/tinystories_3M
+lm_dataset_dir: ./lm_dataset/tinystories_3M

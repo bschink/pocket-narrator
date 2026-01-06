@@ -1,0 +1,18 @@
+name: tinystories_4k
+arch: bpe
+
+dataset:
+  hf_dataset: rroneneldan/TinyStories-1M
+  config: default
+  split: train
+  num_rows: 4000
+  offset: 0
+  num_examples: 8000   # or null for full
+
+vocab_size: 4000
+block_size: 256
+special_tokens: ["<pad>", "<bos>", "<eos>", "<unk>"]
+min_frequency: 1  # at the first was 2 :Because with small corpora + BPE, min_frequency=2 can shrink the actual final vocab.
+
+save_dir: ./tokenizers/tinystories_4k
+lm_dataset_dir: ./lm_dataset/tinystories_4k

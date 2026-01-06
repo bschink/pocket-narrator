@@ -1,0 +1,25 @@
+name: tinystories_10k
+arch: bpe
+
+dataset:
+  hf_dataset: roneneldan/tinystories_1M
+  config: default
+  split: train
+  num_rows: 10000
+  offset: 0
+num_examples: null          # null = use full split
+vocab_size: 10000
+block_size: 256
+special_tokens: ["<pad>", "<bos>", "<eos>", "<unk>"]
+min_frequency: 2
+
+save_dir: ./tokenizers/tinystories_10k
+lm_dataset_dir: ./lm_dataset/tinystories_10k
+
+
+
+#text_field: text
+#tokenizer_type: bpe
+
+
+#seq_len: 256

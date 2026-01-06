@@ -14,6 +14,27 @@ python -m pocket_narrator.models.mamba.train_tokenizer_and_lm_dataset \
 
   """
 
+def _load_ds(dataset_cfg: dict, split: str):
+    """
+    Load dataset from either:
+    - local text file (datasets 'text' loader) if dataset_cfg['local_text_file'] is set
+    - HuggingFace Hub otherwise (reuse cache if it exists)
+    """
+    local_file = dataset_cfg.get("local_text_file", None)
+    if local_file:
+        # 'text' dataset returns a column named 'text'
+        return load_dataset("text", data_files=local_file, split="train")
+
+    hf_dataset = dataset_cfg["hf_dataset"]
+    config_name = dataset_cfg.get("config", None)
+
+    return load_dataset(
+        hf_dataset,
+        config_name,
+        split=split,
+        download_mode="reuse_dataset_if_exists",
+    )
+
 def build_tokenizer(c: dict):
     dataset_cfg = c["dataset"]
     tok_cfg = c["tokenizer"]
@@ -28,7 +49,7 @@ def build_tokenizer(c: dict):
     save_dir.mkdir(parents=True, exist_ok=True)
     tmp_txt = save_dir / "corpus.txt"
 
-    ds = load_dataset(hf_dataset, config_name, split=split)
+    ds = _load_ds(dataset_cfg, split=split)
     if num_rows is not None:
         ds = ds.select(range(min(num_rows, len(ds))))
 
@@ -76,7 +97,7 @@ def build_lm_dataset(c: dict, tokenizer: PreTrainedTokenizerFast):
     lm_dir = Path(tok_cfg["lm_dataset_dir"])
     lm_dir.mkdir(parents=True, exist_ok=True)
 
-    ds = load_dataset(hf_dataset, config_name, split=split)
+    ds = _load_ds(dataset_cfg, split=split)
     print('------------------')
     print(type(ds))
     df= pd.DataFrame(ds)
@@ -131,3 +152,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

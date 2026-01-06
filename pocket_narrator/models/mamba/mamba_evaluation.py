@@ -254,10 +254,11 @@ def main():
     lm_dataset_dir = tok_cfg["lm_dataset_dir"]
     bs = args.batch_size if args.batch_size is not None else 1
     train_dl, eval_dl = create_dataloaders(
-        lm_dataset_dir=lm_dataset_dir,
-        batch_size=bs,
-        num_workers=args.num_workers,
-    )
+    lm_dataset_dir=lm_dataset_dir,
+    train_batch_size=bs,
+    eval_batch_size=bs,
+    num_workers=args.num_workers,
+)
 
     # Tokenizer
     tokenizer_dir = tok_cfg.get("save_dir") or tok_cfg.get("tokenizer_dir")

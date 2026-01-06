@@ -1,0 +1,8 @@
+dataset_name: roneneldan/TinyStories
+split: train
+num_rows: 2000000
+vocab_size: 10000
+block_size: 256
+
+tokenizer_dir: ./tokenizers/tinystories_33M
+lm_dataset_dir: ./lm_dataset/tinystories_33M

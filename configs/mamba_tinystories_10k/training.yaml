@@ -1,0 +1,20 @@
+name: mamba_tinystories_10k
+output_dir: ./results/mamba_tinystories_10k
+num_train_epochs: 4
+batch_size: 8
+
+learning_rate: 3.0e-4
+weight_decay: 0.01
+grad_accum_steps: 1
+max_grad_norm: 1.0
+
+num_workers: 0
+
+log_samples_every_n_epochs: 1
+sample_max_new_tokens: 64
+sample_temperature: 0.8
+sample_top_k: 50
+sample_prompts:
+  - "Once upon a time"
+  - "In a small village"
+  - "The robot said"

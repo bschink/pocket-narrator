@@ -1,0 +1,20 @@
+name: tinystories_mamba_1M
+arch: bpe
+
+dataset:
+  hf_dataset: roneneldan/TinyStories
+  config: default
+  split: train
+  num_rows: 200000        # we can increase later
+  text_key: text
+
+tokenizer:
+  vocab_size: 10000
+  block_size: 256
+  save_dir: tokenizers/tinystories_1M
+  tokenizer_dir: ./tokenizers/tinystories_1M
+  lm_dataset_dir: ./lm_dataset/tinystories_1M
+
+
+tokenizer_dir: ./tokenizers/tinystories_1M
+lm_dataset_dir: ./lm_dataset/tinystories_1M

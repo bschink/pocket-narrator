@@ -1,0 +1,13 @@
+name: mamba_tinystories_4k
+vocab_size: 4000   #2576
+
+d_model: 256 # Recommended: 64, 128, 256, 512.   ---> end 64!
+n_layers: 2 # Recommended: 2, 4, 6, 8
+seq_len: 256
+
+d_state: 16
+d_conv: 3
+expand: 2
+
+pad_token_id: 0
+dropout: 0.1

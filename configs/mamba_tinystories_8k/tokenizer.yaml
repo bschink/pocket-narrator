@@ -1,0 +1,17 @@
+name: tinystories_8k
+arch: bpe
+
+dataset:
+  hf_dataset: roneneldan/TinyStories
+  config: default
+  split: train
+  num_rows: 8000
+  offset: 0
+
+vocab_size: 8192
+block_size: 256
+special_tokens: ["<pad>", "<bos>", "<eos>", "<unk>"]
+min_frequency: 2
+
+save_dir: ./tokenizers/tinystories_8k
+lm_dataset_dir: ./lm_dataset/tinystories_8k

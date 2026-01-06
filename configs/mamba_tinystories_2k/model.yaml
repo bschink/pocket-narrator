@@ -1,0 +1,23 @@
+name: mamba_tinystories_2k
+
+
+# Tokenizer vocab size must match the tokenizer, train
+vocab_size: 2048
+
+# Very small model (fast on CPU)
+d_model: 128 # Recommended: 64, 128, 256, 512.   ---> end 64! 
+n_layers: 2  # Recommended: 2, 4, 6, 8
+
+# Context length
+seq_len: 256
+
+# Mamba-block params (on SimpleMambaBlock)
+d_state: 16
+d_conv: 3      # must be odd (3,5,7,...)
+expand: 2
+
+# Special tokens
+pad_token_id: 0
+
+# Regularization
+dropout: 0.1 # Typical values: 0.1, 0.2, 0.3
