@@ -72,11 +72,15 @@ def load_model(model_path: str) -> AbstractLanguageModel:
         print("INFO: Detected PyTorch .pth model file. Using neural model loading logic.")
         
         import torch
-        save_dict = torch.load(model_path)
+        device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+        print(f"INFO: Loading model onto {device}...")
+        
+        save_dict = torch.load(model_path, map_location=device)
         config = save_dict['config']
         state_dict = save_dict['state_dict']
         
         model = get_model(**config)
+        model.to(device)
         model.load_state_dict(state_dict)
         return model
     
@@ -85,7 +89,10 @@ def load_model(model_path: str) -> AbstractLanguageModel:
         import torch
         try:
             print("INFO: Detected .model file. Attempting PyTorch load first...")
-            save_dict = torch.load(model_path)
+            device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+            print(f"INFO: Loading model onto {device}...")
+
+            save_dict = torch.load(model_path, map_location=device)
             config = save_dict.get('config', {})
             state_dict = save_dict.get('state_dict')
             
@@ -93,10 +100,12 @@ def load_model(model_path: str) -> AbstractLanguageModel:
                 # Successfully loaded as PyTorch
                 print("INFO: Loaded as PyTorch model (neural/transformer).")
                 model = get_model(**config)
+                model.to(device)
                 model.load_state_dict(state_dict)
                 return model
-        except (FileNotFoundError, KeyError, pickle.UnpicklingError, RuntimeError, EOFError):
+        except (FileNotFoundError, KeyError, pickle.UnpicklingError, RuntimeError, EOFError) as e:
             # PyTorch load failed, try JSON
+            print(f"INFO: PyTorch load failed: {e}. Attempting JSON load (n-gram)...")
             pass
         
         # Fallback to JSON (n-gram)

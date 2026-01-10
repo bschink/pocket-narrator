@@ -36,3 +36,6 @@ wandb
 
 # mamba implementation (requires NVIDIA GPU with CUDA - won't work on macOS)
 # mamba_ssm
+
+# demo app
+gradio
