@@ -13,7 +13,7 @@
 #
 # ============================================================================
 
-run_name: "transformer_bigger_better_swiglu"
+run_name: "transformer_28M_wide"
 
 # ============================================================================
 # DATA CONFIGURATION
@@ -30,7 +30,7 @@ data:
 
   # Batch size for training (used in compute_batch_loss for transformers)
   # N-grams train on the full corpus, but this is still used for validation batching
-  batch_size: 128
+  batch_size: 32
 
 # ============================================================================
 # TOKENIZER CONFIGURATION
@@ -83,7 +83,7 @@ model:
 
   # Model dimension (embedding and hidden size)
   # Recommended: 64, 128, 256, 512
-  d_model: 256
+  d_model: 512
 
   # Number of transformer blocks (layers)
   # Recommended: 2, 4, 6, 8
@@ -157,7 +157,7 @@ trainer:
 
   # Whether to use Automatic Mixed Precision (AMP) for faster training on CUDA
   # Requires GPU, disabled on CPU
-  use_amp: false
+  use_amp: true
 
   # Whether to enable KV-cache during generation (inference only, not training)
   # Speeds up generation but uses more memory

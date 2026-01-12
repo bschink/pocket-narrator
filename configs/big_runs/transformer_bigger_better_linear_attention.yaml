@@ -161,7 +161,7 @@ trainer:
 
   # Whether to enable KV-cache during generation (inference only, not training)
   # Speeds up generation but uses more memory
-  kv_caching_enabled: false
+  kv_caching_enabled: true
 
   # ========== N-GRAM TRAINER PARAMETERS ==========
   # (Only used when type: "ngram")
