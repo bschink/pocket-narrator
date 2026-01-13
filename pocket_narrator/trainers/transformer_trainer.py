@@ -292,14 +292,29 @@ class TransformerTrainer(AbstractTrainer):
 
                 # Get loss components from batch
                 normalized_loss, raw_loss_sum, num_valid_tokens = self.compute_batch_loss(model, tokenizer, batch_text, loss_fn)
-                normalized_loss.backward()
-
-                # Compute gradient norm before clipping
+                
                 grad_norm = None
-                if self.grad_clip:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.grad_clip)
 
-                optimizer.step()
+                if self.scaler is not None:
+                    # Mixed Precision (AMP) Step
+                    self.scaler.scale(normalized_loss).backward()
+                    
+                    if self.grad_clip:
+                        # Unscale gradients before clipping so clipping threshold refers to real values
+                        self.scaler.unscale_(optimizer)
+                        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.grad_clip)
+                    
+                    self.scaler.step(optimizer)
+                    self.scaler.update()
+                else:
+                    # Standard Precision Step
+                    normalized_loss.backward()
+
+                    if self.grad_clip:
+                        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.grad_clip)
+
+                    optimizer.step()
+
                 scheduler.step()
 
                 # Accumulate raw loss sum and token count (same as validation does)
