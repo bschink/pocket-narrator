@@ -64,7 +64,7 @@ def tell_story(prompt, temperature):
 with gr.Blocks() as demo:
     with gr.Column():
         input_prompt = gr.Textbox(label="Input Prompt", lines=2, elem_classes="big-text")
-        temperature = gr.Slider(minimum=0, maximum=1, step=0.1, value=0.9, label="Temperature")
+        temperature = gr.Slider(minimum=0.1, maximum=1, step=0.1, value=0.9, label="Temperature")
         generate_btn = gr.Button("Generate")
         
     output_text = gr.Textbox(label="Generated Story", lines=10, elem_classes="big-text")
