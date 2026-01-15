@@ -5,7 +5,7 @@ name: mamba_tinystories_2k
 vocab_size: 2048
 
 # Very small model (fast on CPU)
-d_model: 128 # Recommended: 64, 128, 256, 512.   ---> end 64! 
+d_model: 512 # Recommended: 64, 128, 256, 512.   ---> end 64! 
 n_layers: 2  # Recommended: 2, 4, 6, 8
 
 # Context length
