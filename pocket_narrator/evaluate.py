@@ -24,6 +24,18 @@ try:
 except ImportError:
     _HAS_TEXT_QUALITY = False
 
+# Noun carryover evaluation (optional)
+try:
+    from pocket_narrator.noun_carryover import (
+        noun_carryover_metrics,
+        SoftConfig,
+        extract_nouns,
+        SoftEmbedder
+    )
+    _HAS_NOUN_CARRYOVER = True
+except ImportError:
+    _HAS_NOUN_CARRYOVER = False
+
 
 try:
     from transformers import pipeline
@@ -344,7 +356,11 @@ def run_evaluation(
     llm_judge_prompt_template: Optional[str] = None,
     story_beginnings: Optional[list[str]] = None,
     check_text_quality: bool = True,
-    text_quality_config: Optional['TextQualityConfig'] = None
+    text_quality_config: Optional['TextQualityConfig'] = None,
+    check_noun_carryover: bool = True,
+    noun_carryover_spacy_model: str = "en_core_web_sm",
+    noun_carryover_soft_model: str = "all-MiniLM-L6-v2",
+    noun_carryover_threshold: float = 0.70
 ) -> dict:
     """
     Master evaluation function that runs all evaluation metrics and returns a summary dictionary.
@@ -360,10 +376,14 @@ def run_evaluation(
         llm_judge_api_key: Google API key for Gemini (reads from env if None).
         llm_judge_max_stories: Max stories to evaluate with LLM judge (None = all).
         llm_judge_prompt_template: Custom prompt template for LLM judge.
-        story_beginnings: Story prompts given to the model. Required for LLM judge.
+        story_beginnings: Story prompts given to the model. Required for LLM judge and noun carryover.
                          If None, uses target_text as story beginnings.
         check_text_quality: Whether to run text quality evaluation (coherence/cohesion).
         text_quality_config: Optional TextQualityConfig for customizing text quality evaluation.
+        check_noun_carryover: Whether to run noun carryover evaluation (prompt noun retention).
+        noun_carryover_spacy_model: spaCy model for noun extraction (default: "en_core_web_sm").
+        noun_carryover_soft_model: Sentence-transformers model for embeddings (default: "all-MiniLM-L6-v2").
+        noun_carryover_threshold: Threshold for soft_coverage@tau metric (default: 0.70).
 
     Returns:
         A dictionary of all calculated evaluation metrics.
@@ -483,6 +503,78 @@ def run_evaluation(
         evaluation_results["text_quality_coherence"] = None
         evaluation_results["text_quality_cohesion"] = None
         evaluation_results["text_quality_score"] = None
+
+    # --- 9. Noun Carryover Evaluation (Prompt Noun Retention)
+    if check_noun_carryover and _HAS_NOUN_CARRYOVER and predicted_text:
+        # Use provided story_beginnings or fall back to target_text as prompts
+        prompts = story_beginnings if story_beginnings is not None else target_text
+        
+        if prompts and len(prompts) == len(predicted_text):
+            print("--- Computing Noun Carryover Metrics (Hard + Soft) ---")
+            
+            from pocket_narrator.noun_carryover import SoftConfig
+            soft_cfg = SoftConfig(
+                model_name=noun_carryover_soft_model,
+                threshold=noun_carryover_threshold
+            )
+            
+            # Aggregate metrics across all prompt-story pairs
+            total_hard_coverage = 0.0
+            total_hard_jaccard = 0.0
+            total_hard_precision = 0.0
+            total_soft_coverage = 0.0
+            total_soft_at_tau = 0.0
+            soft_available_count = 0
+            
+            for prompt, story in zip(prompts, predicted_text):
+                try:
+                    metrics = noun_carryover_metrics(
+                        prompt,
+                        story,
+                        spacy_model=noun_carryover_spacy_model,
+                        soft_cfg=soft_cfg
+                    )
+                    
+                    total_hard_coverage += metrics["hard_coverage"] or 0.0
+                    total_hard_jaccard += metrics["hard_jaccard"] or 0.0
+                    total_hard_precision += metrics["hard_precision"] or 0.0
+                    
+                    # Soft metrics might be None if dependencies missing
+                    if metrics["soft_coverage"] is not None:
+                        total_soft_coverage += metrics["soft_coverage"]
+                        soft_available_count += 1
+                    
+                    tau_key = f"soft_coverage@{soft_cfg.threshold:.2f}"
+                    if metrics.get(tau_key) is not None:
+                        total_soft_at_tau += metrics[tau_key]
+                        
+                except Exception as e:
+                    print(f"WARNING: Noun carryover failed for one sample: {e}")
+                    continue
+            
+            n = len(prompts)
+            evaluation_results["noun_hard_coverage"] = total_hard_coverage / n if n > 0 else 0.0
+            evaluation_results["noun_hard_jaccard"] = total_hard_jaccard / n if n > 0 else 0.0
+            evaluation_results["noun_hard_precision"] = total_hard_precision / n if n > 0 else 0.0
+            evaluation_results["noun_soft_coverage"] = (
+                total_soft_coverage / soft_available_count if soft_available_count > 0 else None
+            )
+            evaluation_results[f"noun_soft_coverage@{noun_carryover_threshold:.2f}"] = (
+                total_soft_at_tau / soft_available_count if soft_available_count > 0 else None
+            )
+        else:
+            print("WARNING: Skipping noun carryover - prompts and predictions length mismatch")
+            evaluation_results["noun_hard_coverage"] = None
+            evaluation_results["noun_hard_jaccard"] = None
+            evaluation_results["noun_hard_precision"] = None
+            evaluation_results["noun_soft_coverage"] = None
+            evaluation_results[f"noun_soft_coverage@{noun_carryover_threshold:.2f}"] = None
+    else:
+        evaluation_results["noun_hard_coverage"] = None
+        evaluation_results["noun_hard_jaccard"] = None
+        evaluation_results["noun_hard_precision"] = None
+        evaluation_results["noun_soft_coverage"] = None
+        evaluation_results[f"noun_soft_coverage@{noun_carryover_threshold:.2f}"] = None
 
     
     return evaluation_results
