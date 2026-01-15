@@ -111,7 +111,7 @@ def build_training_config(cfg: dict) -> MambaTrainingConfig:
         output_dir=t["output_dir"],
         batch_size=int(t.get("batch_size", 32)),
         eval_batch_size=int(t.get("eval_batch_size", t.get("batch_size", 32))),
-        num_epochs=int(t.get("num_epochs", 3)),
+        num_epochs=int(t.get("num_epochs", 4)), #it was 3
         learning_rate=float(t.get("learning_rate", 3e-4)),
         weight_decay=float(t.get("weight_decay", 0.01)),
         max_grad_norm=float(t.get("max_grad_norm", 1.0)),

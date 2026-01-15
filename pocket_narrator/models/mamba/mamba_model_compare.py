@@ -60,7 +60,7 @@ def format_table(results: List[ModelResult], keys: List[str]) -> str:
 
 
 if __name__ == "__main__":
-    # Beispielnutzung – passe das an dein Projekt an:
+    
     paths = {
         "gpt2_small": "results/gpt2_small/metrics.json",
         "gptneo_8M": "results/gptneo_8M/metrics.json",
