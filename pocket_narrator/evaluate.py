@@ -112,11 +112,6 @@ def _calculate_distinct_n_single(text: str, n: int) -> float:
 def distinct_n(texts: list[str], n: int = 2) -> float:
     """
     Compute Distinct-n with per-text averaging.
-    
-    Mirrors the structure of calculate_grammar_score with:
-    - Internal batching for processing efficiency
-    - Per-text score calculation
-    - Averaged final result
 
     Args:
         texts: list of text strings
@@ -207,6 +202,108 @@ def repetition_rate(texts: list[str]) -> float:
             count += 1
     
     return total_score / count if count > 0 else 0.0
+
+
+def _count_words_single(text: str) -> int:
+    """
+    Count the number of words in a single text.
+    
+    Args:
+        text: A single text string
+        
+    Returns:
+        int: Number of words
+    """
+    tokens = _word_tokenize(text)
+    return len(tokens)
+
+
+def count_words(texts: list[str]) -> float:
+    """
+    Calculates the average number of words per text using per-text scoring.
+    
+    Args:
+        texts: list of text strings
+        
+    Returns:
+        float: Average number of words across all texts.
+        Returns 0.0 if texts is empty.
+    """
+    if not texts:
+        return 0.0
+    
+    # Internal batching (similar to grammar_score's batch_size=8)
+    batch_size = min(8, len(texts))
+    
+    total_words = 0
+    count = 0
+    
+    # Process in internal batches for consistent structure
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i:i + batch_size]
+        
+        for text in batch_texts:
+            words = _count_words_single(text)
+            total_words += words
+            count += 1
+    
+    return total_words / count if count > 0 else 0.0
+
+
+def _count_sentences_single(text: str) -> int:
+    """
+    Count the number of sentences in a single text.
+    Uses simple heuristic: count sentence-ending punctuation (. ! ?)
+    
+    Args:
+        text: A single text string
+        
+    Returns:
+        int: Number of sentences (at least 1 if text is non-empty)
+    """
+    if not text or not text.strip():
+        return 0
+    
+    # Count sentence-ending punctuation
+    sentence_endings = text.count('.') + text.count('!') + text.count('?')
+    
+    # If no sentence endings found, treat as 1 sentence if text exists
+    if sentence_endings == 0:
+        return 1 if text.strip() else 0
+    
+    return sentence_endings
+
+
+def count_sentences(texts: list[str]) -> float:
+    """
+    Calculates the average number of sentences per text using per-text scoring.
+    
+    Args:
+        texts: list of text strings
+        
+    Returns:
+        float: Average number of sentences across all texts.
+        Returns 0.0 if texts is empty.
+    """
+    if not texts:
+        return 0.0
+    
+    # Internal batching (similar to grammar_score's batch_size=8)
+    batch_size = min(8, len(texts))
+    
+    total_sentences = 0
+    count = 0
+    
+    # Process in internal batches for consistent structure
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i:i + batch_size]
+        
+        for text in batch_texts:
+            sentences = _count_sentences_single(text)
+            total_sentences += sentences
+            count += 1
+    
+    return total_sentences / count if count > 0 else 0.0
 
 
 def calculate_perplexity(loss_value: float) -> float:
@@ -473,6 +570,12 @@ def run_evaluation(
     # --- 4. Repetition rate over generated text
     evaluation_results["repetition_rate"] = repetition_rate(predicted_text)
 
+    # --- 4b. Word count (average words per text)
+    evaluation_results["word_count"] = count_words(predicted_text)
+    
+    # --- 4c. Sentence count (average sentences per text)
+    evaluation_results["sentence_count"] = count_sentences(predicted_text)
+
     # --- 5. N-gram Overlap Metrics (BLEU & ROUGE)
     total_bleu = 0.0
     total_rouge_1 = 0.0
@@ -667,6 +770,12 @@ def run_dataset_evaluation(
     
     # --- 2. Repetition rate over generated text
     evaluation_results["repetition_rate"] = repetition_rate(dataset_text)
+
+    # --- 2b. Word count (average words per text)
+    evaluation_results["word_count"] = count_words(dataset_text)
+    
+    # --- 2c. Sentence count (average sentences per text)
+    evaluation_results["sentence_count"] = count_sentences(dataset_text)
 
     # --- 3. Grammar Score (CoLA)
     if check_grammar and ENABLE_GRAMMAR_CHECK and dataset_text:
