@@ -1,8 +1,8 @@
 name: mamba_tinystories_10k
 vocab_size: 2576
-
-d_model: 128
-n_layers: 2
+ 
+d_model: 128   # Recommended: 64, 128, 256, 512.   ---> end 64!
+n_layers: 2 # Recommended: 2, 4, 6, 8
 seq_len: 256
 
 d_state: 16
