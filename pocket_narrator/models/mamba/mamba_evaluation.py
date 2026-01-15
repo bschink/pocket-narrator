@@ -1,4 +1,4 @@
-# pocket_narrator/models/mamba/mamba_evaluation.py
+# the main mamba_evaluation without bleu, rouge, recall and F1
 import os
 import json
 import math
