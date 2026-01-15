@@ -7,9 +7,34 @@ to support a variety of metrics.
 import re
 import math
 from collections import Counter
+from dataclasses import dataclass
+from typing import Optional
 import torch
 # Temporary: disable grammar scoring because HF CoLA model requires torch>=2.6
 ENABLE_GRAMMAR_CHECK = False
+
+# Text quality evaluation (optional)
+try:
+    from pocket_narrator.text_quality import (
+        TextQualityConfig,
+        evaluate_text_quality,
+        _Embedder
+    )
+    _HAS_TEXT_QUALITY = True
+except ImportError:
+    _HAS_TEXT_QUALITY = False
+
+# Noun carryover evaluation (optional)
+try:
+    from pocket_narrator.noun_carryover import (
+        noun_carryover_metrics,
+        SoftConfig,
+        extract_nouns,
+        SoftEmbedder
+    )
+    _HAS_NOUN_CARRYOVER = True
+except ImportError:
+    _HAS_NOUN_CARRYOVER = False
 
 
 try:
@@ -389,7 +414,18 @@ def run_evaluation(
     predicted_text: list[str],
     target_text: list[str],
     val_loss: float = None,
-    check_grammar: bool = True
+    check_grammar: bool = True,
+    run_llm_judge: bool = False,
+    llm_judge_api_key: Optional[str] = None,
+    llm_judge_max_stories: Optional[int] = None,
+    llm_judge_prompt_template: Optional[str] = None,
+    story_beginnings: Optional[list[str]] = None,
+    check_text_quality: bool = True,
+    text_quality_config: Optional['TextQualityConfig'] = None,
+    check_noun_carryover: bool = True,
+    noun_carryover_spacy_model: str = "en_core_web_sm",
+    noun_carryover_soft_model: str = "all-MiniLM-L6-v2",
+    noun_carryover_threshold: float = 0.70
 ) -> dict:
     """
     Master evaluation function that runs all evaluation metrics and returns a summary dictionary.
@@ -401,6 +437,18 @@ def run_evaluation(
         target_text: Batch of decoded target sentences (list[str]).
         val_loss: The Cross Entropy Loss on the validation set.
         check_grammar: Whether to run the grammar checker.
+        run_llm_judge: Whether to run LLM-as-a-judge evaluation (requires API key).
+        llm_judge_api_key: Google API key for Gemini (reads from env if None).
+        llm_judge_max_stories: Max stories to evaluate with LLM judge (None = all).
+        llm_judge_prompt_template: Custom prompt template for LLM judge.
+        story_beginnings: Story prompts given to the model. Required for LLM judge and noun carryover.
+                         If None, uses target_text as story beginnings.
+        check_text_quality: Whether to run text quality evaluation (coherence/cohesion).
+        text_quality_config: Optional TextQualityConfig for customizing text quality evaluation.
+        check_noun_carryover: Whether to run noun carryover evaluation (prompt noun retention).
+        noun_carryover_spacy_model: spaCy model for noun extraction (default: "en_core_web_sm").
+        noun_carryover_soft_model: Sentence-transformers model for embeddings (default: "all-MiniLM-L6-v2").
+        noun_carryover_threshold: Threshold for soft_coverage@tau metric (default: 0.70).
 
     Returns:
         A dictionary of all calculated evaluation metrics.
@@ -457,6 +505,142 @@ def run_evaluation(
     else:
         evaluation_results["grammar_score"] = None
 
+    # --- 7. LLM-as-a-Judge Evaluation (TinyStories style)
+    if run_llm_judge and predicted_text:
+        # Use provided story_beginnings or fall back to target_text
+        beginnings = story_beginnings if story_beginnings is not None else target_text
+        llm_judge_results = run_llm_judge_evaluation(
+            story_beginnings=beginnings,
+            story_completions=predicted_text,
+            prompt_template=llm_judge_prompt_template,
+            api_key=llm_judge_api_key,
+            max_stories=llm_judge_max_stories
+        )
+        evaluation_results.update(llm_judge_results)
+    else:
+        # Add placeholder keys with None values when LLM judge is disabled
+        evaluation_results["llm_judge_grammar"] = None
+        evaluation_results["llm_judge_creativity"] = None
+        evaluation_results["llm_judge_consistency"] = None
+        evaluation_results["llm_judge_age_groups"] = None
+        evaluation_results["llm_judge_num_evaluated"] = None
+        evaluation_results["llm_judge_num_failed"] = None
+
+    # --- 8. Text Quality Evaluation (Coherence + Cohesion)
+    if check_text_quality and _HAS_TEXT_QUALITY and predicted_text:
+        print("--- Computing Text Quality Metrics (Coherence + Cohesion) ---")
+        cfg = text_quality_config or TextQualityConfig()
+        
+        # Create shared embedder for efficiency
+        embedder = None
+        if cfg.use_sentence_transformers:
+            try:
+                embedder = _Embedder(cfg.st_model)
+            except Exception as e:
+                print(f"WARNING: Could not load sentence-transformers embedder: {e}")
+        
+        # Compute metrics for each story
+        coherence_scores = []
+        cohesion_scores = []
+        text_quality_scores = []
+        
+        for story in predicted_text:
+            try:
+                metrics = evaluate_text_quality(story, cfg=cfg, embedder=embedder)
+                coherence_scores.append(metrics.get("coherence", float("nan")))
+                cohesion_scores.append(metrics.get("cohesion_mean", float("nan")))
+                text_quality_scores.append(metrics.get("text_quality", float("nan")))
+            except Exception as e:
+                print(f"WARNING: Text quality evaluation failed for one story: {e}")
+                coherence_scores.append(float("nan"))
+                cohesion_scores.append(float("nan"))
+                text_quality_scores.append(float("nan"))
+        
+        # Aggregate (ignoring NaNs)
+        def safe_mean(scores):
+            valid = [s for s in scores if not math.isnan(s)]
+            return sum(valid) / len(valid) if valid else float("nan")
+        
+        evaluation_results["text_quality_coherence"] = safe_mean(coherence_scores)
+        evaluation_results["text_quality_cohesion"] = safe_mean(cohesion_scores)
+        evaluation_results["text_quality_score"] = safe_mean(text_quality_scores)
+    else:
+        evaluation_results["text_quality_coherence"] = None
+        evaluation_results["text_quality_cohesion"] = None
+        evaluation_results["text_quality_score"] = None
+
+    # --- 9. Noun Carryover Evaluation (Prompt Noun Retention)
+    if check_noun_carryover and _HAS_NOUN_CARRYOVER and predicted_text:
+        # Use provided story_beginnings or fall back to target_text as prompts
+        prompts = story_beginnings if story_beginnings is not None else target_text
+        
+        if prompts and len(prompts) == len(predicted_text):
+            print("--- Computing Noun Carryover Metrics (Hard + Soft) ---")
+            
+            from pocket_narrator.noun_carryover import SoftConfig
+            soft_cfg = SoftConfig(
+                model_name=noun_carryover_soft_model,
+                threshold=noun_carryover_threshold
+            )
+            
+            # Aggregate metrics across all prompt-story pairs
+            total_hard_coverage = 0.0
+            total_hard_jaccard = 0.0
+            total_hard_precision = 0.0
+            total_soft_coverage = 0.0
+            total_soft_at_tau = 0.0
+            soft_available_count = 0
+            
+            for prompt, story in zip(prompts, predicted_text):
+                try:
+                    metrics = noun_carryover_metrics(
+                        prompt,
+                        story,
+                        spacy_model=noun_carryover_spacy_model,
+                        soft_cfg=soft_cfg
+                    )
+                    
+                    total_hard_coverage += metrics["hard_coverage"] or 0.0
+                    total_hard_jaccard += metrics["hard_jaccard"] or 0.0
+                    total_hard_precision += metrics["hard_precision"] or 0.0
+                    
+                    # Soft metrics might be None if dependencies missing
+                    if metrics["soft_coverage"] is not None:
+                        total_soft_coverage += metrics["soft_coverage"]
+                        soft_available_count += 1
+                    
+                    tau_key = f"soft_coverage@{soft_cfg.threshold:.2f}"
+                    if metrics.get(tau_key) is not None:
+                        total_soft_at_tau += metrics[tau_key]
+                        
+                except Exception as e:
+                    print(f"WARNING: Noun carryover failed for one sample: {e}")
+                    continue
+            
+            n = len(prompts)
+            evaluation_results["noun_hard_coverage"] = total_hard_coverage / n if n > 0 else 0.0
+            evaluation_results["noun_hard_jaccard"] = total_hard_jaccard / n if n > 0 else 0.0
+            evaluation_results["noun_hard_precision"] = total_hard_precision / n if n > 0 else 0.0
+            evaluation_results["noun_soft_coverage"] = (
+                total_soft_coverage / soft_available_count if soft_available_count > 0 else None
+            )
+            evaluation_results[f"noun_soft_coverage@{noun_carryover_threshold:.2f}"] = (
+                total_soft_at_tau / soft_available_count if soft_available_count > 0 else None
+            )
+        else:
+            print("WARNING: Skipping noun carryover - prompts and predictions length mismatch")
+            evaluation_results["noun_hard_coverage"] = None
+            evaluation_results["noun_hard_jaccard"] = None
+            evaluation_results["noun_hard_precision"] = None
+            evaluation_results["noun_soft_coverage"] = None
+            evaluation_results[f"noun_soft_coverage@{noun_carryover_threshold:.2f}"] = None
+    else:
+        evaluation_results["noun_hard_coverage"] = None
+        evaluation_results["noun_hard_jaccard"] = None
+        evaluation_results["noun_hard_precision"] = None
+        evaluation_results["noun_soft_coverage"] = None
+        evaluation_results[f"noun_soft_coverage@{noun_carryover_threshold:.2f}"] = None
+
     
     return evaluation_results
 
@@ -499,3 +683,214 @@ def run_dataset_evaluation(
 
     
     return evaluation_results
+
+
+# =============================================================================
+# LLM-as-a-Judge Evaluation (TinyStories paper style)
+# =============================================================================
+
+@dataclass
+class LLMJudgeResult:
+    """
+    Aggregated results from LLM-as-a-judge evaluation over multiple stories.
+    """
+    avg_grammar: float
+    avg_creativity: float
+    avg_consistency: float
+    age_group_distribution: dict[str, int]  # Count of each age group
+    individual_scores: list  # List of LLMJudgeScores for each story
+    num_evaluated: int
+    num_failed: int
+
+
+# Placeholder prompt template - customize this based on TinyStories paper (page 5)
+LLM_JUDGE_PROMPT_TEMPLATE = """
+You are an expert evaluator of children's stories. 
+In the following exercise, the student is given a beginning of a story. The student needs to complete it into a full story.
+The exercise tests the student's language abilities and creativity. 
+The beginning of the story is wrapped in <story_beginning> and the student's completion is wrapped in <story_completion>.
+
+First provide your general assessment about the part written by the student (<story_completion>).
+Is it gramatically correct? Is it consistent with the beginning of the story? Pay special attention to whether the
+student manages to complete the sentence which began in <story_beginning> but wasn't finished if that's the case.
+
+Afterwards, grade the student’s completion in terms of grammar, creativity, consistency with the story’s beginning and
+whether the plot makes sense. Moreover, please provide your best guess of what the age of the student might be,
+as reflected from the completion. Choose from possible age groups: A: 3 or under. B: 4-5. C: 6-7. D: 8-9. E:
+10-12. F: 13-16. Please evaluate the model's completion based on these criteria, providing a score from 1-3 for each:
+
+1. Grammar: How grammatically correct is the completion?
+2. Creativity: How creative and imaginative is the completion?
+3. Consistency: How logically consistent is the completion with the beginning?
+4. Age group: What age group is this story appropriate for?
+   (A: 3 or under, B: 4-5, C: 6-7, D: 8-9, E: 10-12, F: 13-16)
+
+Story beginning (given in the exercise):
+<story_beginning>
+{story_beginning}
+</story_beginning>
+
+Students completion:
+<story_completion>
+{story_completion}
+</story_completion>
+
+Please frame your evaluation in exactly this format:
+<grammar><score 1-3></grammar>
+<creativity><score 1-3></creativity>
+<consistency><score 1-3></consistency>
+<age_group><single letter A-F></age_group>
+"""
+
+
+def calculate_llm_judge_scores(
+    story_beginnings: list[str],
+    story_completions: list[str],
+    prompt_template: Optional[str] = None,
+    api_key: Optional[str] = None,
+    max_stories: Optional[int] = None
+) -> LLMJudgeResult:
+    """
+    Evaluate generated stories using LLM-as-a-judge method.
+    
+    This implements the evaluation approach from the TinyStories paper (page 5),
+    using an LLM to assess Grammar, Creativity, Consistency, and Age Group.
+    
+    Args:
+        story_beginnings: List of prompts/beginnings given to the model.
+        story_completions: List of texts generated by the model.
+        prompt_template: Custom prompt template for evaluation. 
+                        Use {story_beginning} and {story_completion} as placeholders.
+                        If None, uses default template.
+        api_key: Google API key for Gemini. If None, reads from GOOGLE_API_KEY env var.
+        max_stories: Maximum number of stories to evaluate (for cost control).
+                    If None, evaluates all stories.
+    
+    Returns:
+        LLMJudgeResult with aggregated scores and individual evaluations.
+    """
+    from pocket_narrator.gemini_api import (
+        GeminiClient, 
+        GeminiAPIError, 
+        evaluate_stories_batch,
+        LLMJudgeScores
+    )
+    
+    if not story_beginnings or not story_completions:
+        return LLMJudgeResult(
+            avg_grammar=0.0,
+            avg_creativity=0.0,
+            avg_consistency=0.0,
+            age_group_distribution={},
+            individual_scores=[],
+            num_evaluated=0,
+            num_failed=0
+        )
+    
+    # Use default template if none provided
+    template = prompt_template or LLM_JUDGE_PROMPT_TEMPLATE
+    
+    # Limit number of stories if specified
+    beginnings_to_evaluate = story_beginnings[:max_stories] if max_stories else story_beginnings
+    completions_to_evaluate = story_completions[:max_stories] if max_stories else story_completions
+    
+    try:
+        client = GeminiClient(api_key=api_key)
+        scores = evaluate_stories_batch(
+            beginnings_to_evaluate, 
+            completions_to_evaluate, 
+            template, 
+            client=client
+        )
+    except GeminiAPIError as e:
+        print(f"ERROR: Failed to initialize LLM judge: {e}")
+        return LLMJudgeResult(
+            avg_grammar=0.0,
+            avg_creativity=0.0,
+            avg_consistency=0.0,
+            age_group_distribution={},
+            individual_scores=[],
+            num_evaluated=0,
+            num_failed=len(beginnings_to_evaluate)
+        )
+    
+    # Aggregate results
+    total_grammar = 0.0
+    total_creativity = 0.0
+    total_consistency = 0.0
+    age_groups: dict[str, int] = {}
+    num_failed = 0
+    
+    for score in scores:
+        if score.age_group == "error":
+            num_failed += 1
+            continue
+            
+        total_grammar += score.grammar
+        total_creativity += score.creativity
+        total_consistency += score.consistency
+        
+        # Normalize age group string for counting
+        age_key = score.age_group.lower().strip()
+        age_groups[age_key] = age_groups.get(age_key, 0) + 1
+    
+    num_success = len(scores) - num_failed
+    
+    return LLMJudgeResult(
+        avg_grammar=total_grammar / num_success if num_success > 0 else 0.0,
+        avg_creativity=total_creativity / num_success if num_success > 0 else 0.0,
+        avg_consistency=total_consistency / num_success if num_success > 0 else 0.0,
+        age_group_distribution=age_groups,
+        individual_scores=scores,
+        num_evaluated=num_success,
+        num_failed=num_failed
+    )
+
+
+def run_llm_judge_evaluation(
+    story_beginnings: list[str],
+    story_completions: list[str],
+    prompt_template: Optional[str] = None,
+    api_key: Optional[str] = None,
+    max_stories: Optional[int] = None
+) -> dict:
+    """
+    Run LLM-as-a-judge evaluation and return results as a dictionary.
+    
+    This is the main entry point for LLM-based evaluation, designed to be
+    called alongside other evaluation metrics.
+    
+    Args:
+        story_beginnings: List of prompts/beginnings given to the model.
+        story_completions: List of texts generated by the model.
+        prompt_template: Custom prompt template (uses default if None).
+        api_key: Google API key (reads from env if None).
+        max_stories: Max stories to evaluate (None = all).
+    
+    Returns:
+        Dictionary with evaluation results:
+        - llm_judge_grammar: Average grammar score (1-3)
+        - llm_judge_creativity: Average creativity score (1-3)
+        - llm_judge_consistency: Average consistency score (1-3)
+        - llm_judge_age_groups: Distribution of age groups (A-F)
+        - llm_judge_num_evaluated: Number of successfully evaluated stories
+        - llm_judge_num_failed: Number of failed evaluations
+    """
+    print("--- Running LLM-as-Judge Evaluation ---")
+    
+    result = calculate_llm_judge_scores(
+        story_beginnings=story_beginnings,
+        story_completions=story_completions,
+        prompt_template=prompt_template,
+        api_key=api_key,
+        max_stories=max_stories
+    )
+    
+    return {
+        "llm_judge_grammar": result.avg_grammar,
+        "llm_judge_creativity": result.avg_creativity,
+        "llm_judge_consistency": result.avg_consistency,
+        "llm_judge_age_groups": result.age_group_distribution,
+        "llm_judge_num_evaluated": result.num_evaluated,
+        "llm_judge_num_failed": result.num_failed,
+    }

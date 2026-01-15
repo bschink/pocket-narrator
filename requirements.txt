@@ -27,6 +27,10 @@ tqdm>=4.66
 # regular expressions 
 regex
 
+# Noun carryover evaluation
+spacy>=3.7
+sentence-transformers>=2.2
+
 # tests
 pytest
 pytest-mock
@@ -34,8 +38,8 @@ pytest-mock
 # logging
 wandb
 
-# mamba implementation (requires NVIDIA GPU with CUDA - won't work on macOS)
-# mamba_ssm
-
 # demo app
 gradio
+
+# Google Gemini API for LLM-as-a-judge evaluation
+google-genai
