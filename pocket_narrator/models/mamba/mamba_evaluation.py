@@ -19,7 +19,6 @@ from pocket_narrator.models.mamba.mamba_trainer import create_dataloaders
 """
 How to run (from the PROJECT ROOT): 
 1. run evaluation
-cd /Users/kosaralehosseini/Documents/Project/pocket-narrator
 
 python -m pocket_narrator.models.mamba.mamba_evaluation.py \
   --checkpoint results/mamba_tinystories_1M/mamba_best.pt \
