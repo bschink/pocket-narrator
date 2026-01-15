@@ -53,6 +53,12 @@ python -m pocket_narrator.models.mamba.mamba_evaluation \
   --tokenizer_config configs/mamba_tinystories_10k/tokenizer.yaml \
   --checkpoint results/mamba_tinystories_10k/mamba_best.pt \
   --num_workers 0  
+
+python -m pocket_narrator.models.mamba.mamba_evaluation \
+  --model_config configs/mamba_tinystories_1M/model.yaml \
+  --tokenizer_config configs/mamba_tinystories_1M/tokenizer.yaml \
+  --checkpoint results/mamba_tinystories_1M/mamba_best.pt \
+  --num_workers 0    
 """
 
 # Text-metrics helpers
