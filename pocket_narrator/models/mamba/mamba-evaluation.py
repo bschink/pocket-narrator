@@ -1,4 +1,14 @@
-# mamba_evaluation.py
+# this mamba_evaluation with  :
+
+"""
+            "bleu": bleu.score
+            "rougeL": rouge_l,
+            "bertscore_precision": float(P.mean()),
+            "bertscore_recall": float(R.mean()),
+            "bertscore_f1": float(F1.mean()),
+"""
+
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
