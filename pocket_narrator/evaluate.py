@@ -13,6 +13,17 @@ import torch
 # Temporary: disable grammar scoring because HF CoLA model requires torch>=2.6
 ENABLE_GRAMMAR_CHECK = False
 
+# Text quality evaluation (optional)
+try:
+    from pocket_narrator.text_quality import (
+        TextQualityConfig,
+        evaluate_text_quality,
+        _Embedder
+    )
+    _HAS_TEXT_QUALITY = True
+except ImportError:
+    _HAS_TEXT_QUALITY = False
+
 
 try:
     from transformers import pipeline
@@ -331,7 +342,9 @@ def run_evaluation(
     llm_judge_api_key: Optional[str] = None,
     llm_judge_max_stories: Optional[int] = None,
     llm_judge_prompt_template: Optional[str] = None,
-    story_beginnings: Optional[list[str]] = None
+    story_beginnings: Optional[list[str]] = None,
+    check_text_quality: bool = True,
+    text_quality_config: Optional['TextQualityConfig'] = None
 ) -> dict:
     """
     Master evaluation function that runs all evaluation metrics and returns a summary dictionary.
@@ -349,6 +362,8 @@ def run_evaluation(
         llm_judge_prompt_template: Custom prompt template for LLM judge.
         story_beginnings: Story prompts given to the model. Required for LLM judge.
                          If None, uses target_text as story beginnings.
+        check_text_quality: Whether to run text quality evaluation (coherence/cohesion).
+        text_quality_config: Optional TextQualityConfig for customizing text quality evaluation.
 
     Returns:
         A dictionary of all calculated evaluation metrics.
@@ -425,6 +440,49 @@ def run_evaluation(
         evaluation_results["llm_judge_age_groups"] = None
         evaluation_results["llm_judge_num_evaluated"] = None
         evaluation_results["llm_judge_num_failed"] = None
+
+    # --- 8. Text Quality Evaluation (Coherence + Cohesion)
+    if check_text_quality and _HAS_TEXT_QUALITY and predicted_text:
+        print("--- Computing Text Quality Metrics (Coherence + Cohesion) ---")
+        cfg = text_quality_config or TextQualityConfig()
+        
+        # Create shared embedder for efficiency
+        embedder = None
+        if cfg.use_sentence_transformers:
+            try:
+                embedder = _Embedder(cfg.st_model)
+            except Exception as e:
+                print(f"WARNING: Could not load sentence-transformers embedder: {e}")
+        
+        # Compute metrics for each story
+        coherence_scores = []
+        cohesion_scores = []
+        text_quality_scores = []
+        
+        for story in predicted_text:
+            try:
+                metrics = evaluate_text_quality(story, cfg=cfg, embedder=embedder)
+                coherence_scores.append(metrics.get("coherence", float("nan")))
+                cohesion_scores.append(metrics.get("cohesion_mean", float("nan")))
+                text_quality_scores.append(metrics.get("text_quality", float("nan")))
+            except Exception as e:
+                print(f"WARNING: Text quality evaluation failed for one story: {e}")
+                coherence_scores.append(float("nan"))
+                cohesion_scores.append(float("nan"))
+                text_quality_scores.append(float("nan"))
+        
+        # Aggregate (ignoring NaNs)
+        def safe_mean(scores):
+            valid = [s for s in scores if not math.isnan(s)]
+            return sum(valid) / len(valid) if valid else float("nan")
+        
+        evaluation_results["text_quality_coherence"] = safe_mean(coherence_scores)
+        evaluation_results["text_quality_cohesion"] = safe_mean(cohesion_scores)
+        evaluation_results["text_quality_score"] = safe_mean(text_quality_scores)
+    else:
+        evaluation_results["text_quality_coherence"] = None
+        evaluation_results["text_quality_cohesion"] = None
+        evaluation_results["text_quality_score"] = None
 
     
     return evaluation_results
