@@ -55,14 +55,46 @@ def _calculate_mvp_accuracy_on_batch(
             
     return correct_predictions / total_predictions
 
+def _calculate_distinct_n_single(text: str, n: int) -> float:
+    """
+    Calculate distinct-n for a single text.
+    
+    Definition:
+        distinct_n = (# unique n-grams) / (# total n-grams)
+    
+    Args:
+        text: A single text string
+        n: size of n-grams (1, 2, 3, ...)
+        
+    Returns:
+        float in [0, 1]. Higher = more diverse.
+    """
+    tokens = _word_tokenize(text)
+    if len(tokens) < n:
+        return 0.0
+    
+    ngrams = []
+    for i in range(len(tokens) - n + 1):
+        ngrams.append(tuple(tokens[i : i + n]))
+    
+    if not ngrams:
+        return 0.0
+    
+    unique_ngrams = set(ngrams)
+    return len(unique_ngrams) / len(ngrams)
+
+
 def distinct_n(texts: list[str], n: int = 2) -> float:
     """
-    Compute Distinct-n over a list of generated texts.
+    Compute Distinct-n with per-text averaging.
     
-    Distinct-n = (# unique n-grams) / (# total n-grams)
+    Mirrors the structure of calculate_grammar_score with:
+    - Internal batching for processing efficiency
+    - Per-text score calculation
+    - Averaged final result
 
     Args:
-        texts: list of generated strings
+        texts: list of text strings
         n: size of n-grams (1, 2, 3, ...)
 
     Returns:
@@ -71,52 +103,85 @@ def distinct_n(texts: list[str], n: int = 2) -> float:
     if n < 1:
         raise ValueError("n must be >= 1 for distinct-n")
 
-    all_ngrams = []
-
-    for text in texts:
-        tokens = _word_tokenize(text)
-        if len(tokens) < n:
-            continue
-        # sliding n-gram window
-        for i in range(len(tokens) - n + 1):
-            all_ngrams.append(tuple(tokens[i : i + n]))
-
-    if not all_ngrams:
+    if not texts:
         return 0.0
+    
+    # Internal batching for consistent structure
+    batch_size = min(8, len(texts))
+    
+    total_score = 0.0
+    count = 0
+    
+    # Process in internal batches
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i:i + batch_size]
+        
+        for text in batch_texts:
+            score = _calculate_distinct_n_single(text, n)
+            total_score += score
+            count += 1
+    
+    return total_score / count if count > 0 else 0.0
 
-    unique_ngrams = set(all_ngrams)
-    return len(unique_ngrams) / len(all_ngrams)
-
-def repetition_rate(texts: list[str]) -> float:
+def _calculate_repetition_rate_single(text: str) -> float:
     """
-    Compute a simple repetition rate over a list of generated texts.
-
+    Calculate repetition rate for a single text.
+    
     Definition:
-        repetition_rate = (total_tokens - total_unique_tokens) / total_tokens
-
-    Where total_tokens and total_unique_tokens are computed across all texts.
-
+        repetition_rate = (total_tokens - unique_tokens) / total_tokens
+    
+    Args:
+        text: A single text string
+        
     Returns:
         float in [0, 1]. Higher = more repetition.
     """
-    total_tokens = 0
-    all_tokens = []
-
-    for text in texts:
-        tokens = _word_tokenize(text)
-        if not tokens:
-            continue
-        total_tokens += len(tokens)
-        all_tokens.extend(tokens)
-
-    if total_tokens == 0:
+    tokens = _word_tokenize(text)
+    if not tokens:
         return 0.0
-
-    unique_tokens = set(all_tokens)
-    total_unique = len(unique_tokens)
-
-    repeated = total_tokens - total_unique
+    
+    unique_tokens = len(set(tokens))
+    total_tokens = len(tokens)
+    
+    repeated = total_tokens - unique_tokens
     return repeated / total_tokens
+
+
+def repetition_rate(texts: list[str]) -> float:
+    """
+    Calculates the average repetition rate over a list of texts using per-text scoring.
+    
+    Mirrors the structure of calculate_grammar_score with:
+    - Internal batching for processing efficiency
+    - Per-text score calculation
+    - Averaged final result
+    
+    Args:
+        texts: list of text strings
+        
+    Returns:
+        float in [0, 1]. Higher = more repetition.
+        Returns 0.0 if texts is empty.
+    """
+    if not texts:
+        return 0.0
+    
+    # Internal batching (similar to grammar_score's batch_size=8)
+    batch_size = min(8, len(texts))
+    
+    total_score = 0.0
+    count = 0
+    
+    # Process in internal batches for consistent structure
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i:i + batch_size]
+        
+        for text in batch_texts:
+            score = _calculate_repetition_rate_single(text)
+            total_score += score
+            count += 1
+    
+    return total_score / count if count > 0 else 0.0
 
 
 def calculate_perplexity(loss_value: float) -> float:
