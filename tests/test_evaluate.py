@@ -203,3 +203,245 @@ def test_calculate_grammar_score_empty_input():
     """
     score = calculate_grammar_score([], device="cpu")
     assert score == 0.0
+
+
+# =============================================================================
+# LLM-as-a-Judge Evaluation Tests
+# =============================================================================
+
+from pocket_narrator.evaluate import (
+    calculate_llm_judge_scores,
+    run_llm_judge_evaluation,
+    LLMJudgeResult,
+    LLM_JUDGE_PROMPT_TEMPLATE,
+)
+
+
+class TestLLMJudgePromptTemplate:
+    """Tests for the LLM judge prompt template."""
+    
+    def test_prompt_has_story_placeholders(self):
+        """Test that prompt template contains story_beginning and story_completion placeholders."""
+        assert "{story_beginning}" in LLM_JUDGE_PROMPT_TEMPLATE
+        assert "{story_completion}" in LLM_JUDGE_PROMPT_TEMPLATE
+    
+    def test_prompt_mentions_all_criteria(self):
+        """Test that prompt mentions all evaluation criteria."""
+        prompt_lower = LLM_JUDGE_PROMPT_TEMPLATE.lower()
+        
+        assert "grammar" in prompt_lower
+        assert "creativity" in prompt_lower
+        assert "consistency" in prompt_lower
+        assert "age" in prompt_lower
+
+
+class TestCalculateLLMJudgeScores:
+    """Tests for the calculate_llm_judge_scores function."""
+    
+    def test_empty_texts_returns_empty_result(self):
+        """Test that empty input returns a result with zeros."""
+        result = calculate_llm_judge_scores(story_beginnings=[], story_completions=[])
+        
+        assert isinstance(result, LLMJudgeResult)
+        assert result.avg_grammar == 0.0
+        assert result.avg_creativity == 0.0
+        assert result.avg_consistency == 0.0
+        assert result.num_evaluated == 0
+        assert result.num_failed == 0
+    
+    @patch("pocket_narrator.gemini_api.evaluate_stories_batch")
+    @patch("pocket_narrator.gemini_api.GeminiClient")
+    def test_calculates_average_scores(self, mock_client_cls, mock_batch):
+        """Test that average scores are calculated correctly."""
+        from pocket_narrator.gemini_api import LLMJudgeScores
+        
+        # Mock the batch evaluation to return predefined scores
+        mock_batch.return_value = [
+            LLMJudgeScores(grammar=3.0, creativity=2.0, consistency=3.0, age_group="C", raw_response=""),
+            LLMJudgeScores(grammar=2.0, creativity=3.0, consistency=2.0, age_group="C", raw_response=""),
+        ]
+        
+        result = calculate_llm_judge_scores(
+            story_beginnings=["Beginning 1", "Beginning 2"],
+            story_completions=["Completion 1", "Completion 2"],
+            api_key="test-key"
+        )
+        
+        assert result.avg_grammar == 2.5  # (3 + 2) / 2
+        assert result.avg_creativity == 2.5  # (2 + 3) / 2
+        assert result.avg_consistency == 2.5  # (3 + 2) / 2
+        assert result.num_evaluated == 2
+        assert result.num_failed == 0
+    
+    @patch("pocket_narrator.gemini_api.evaluate_stories_batch")
+    @patch("pocket_narrator.gemini_api.GeminiClient")
+    def test_handles_failed_evaluations(self, mock_client_cls, mock_batch):
+        """Test that failed evaluations are counted correctly."""
+        from pocket_narrator.gemini_api import LLMJudgeScores
+        
+        mock_batch.return_value = [
+            LLMJudgeScores(grammar=3.0, creativity=2.0, consistency=3.0, age_group="C", raw_response=""),
+            LLMJudgeScores(grammar=0.0, creativity=0.0, consistency=0.0, age_group="error", raw_response="API error"),
+        ]
+        
+        result = calculate_llm_judge_scores(
+            story_beginnings=["Beginning 1", "Beginning 2"],
+            story_completions=["Completion 1", "Completion 2"],
+            api_key="test-key"
+        )
+        
+        assert result.avg_grammar == 3.0  # Only from successful evaluation
+        assert result.num_evaluated == 1
+        assert result.num_failed == 1
+    
+    @patch("pocket_narrator.gemini_api.evaluate_stories_batch")
+    @patch("pocket_narrator.gemini_api.GeminiClient")
+    def test_tracks_age_group_distribution(self, mock_client_cls, mock_batch):
+        """Test that age group distribution is tracked correctly."""
+        from pocket_narrator.gemini_api import LLMJudgeScores
+        
+        mock_batch.return_value = [
+            LLMJudgeScores(grammar=3.0, creativity=2.0, consistency=3.0, age_group="C", raw_response=""),
+            LLMJudgeScores(grammar=2.0, creativity=2.0, consistency=3.0, age_group="C", raw_response=""),
+            LLMJudgeScores(grammar=2.0, creativity=3.0, consistency=2.0, age_group="D", raw_response=""),
+        ]
+        
+        result = calculate_llm_judge_scores(
+            story_beginnings=["Beginning 1", "Beginning 2", "Beginning 3"],
+            story_completions=["Completion 1", "Completion 2", "Completion 3"],
+            api_key="test-key"
+        )
+        
+        assert "c" in result.age_group_distribution  # Normalized to lowercase
+        assert result.age_group_distribution["c"] == 2
+        assert "d" in result.age_group_distribution
+        assert result.age_group_distribution["d"] == 1
+    
+    @patch("pocket_narrator.gemini_api.evaluate_stories_batch")
+    @patch("pocket_narrator.gemini_api.GeminiClient")
+    def test_respects_max_stories_limit(self, mock_client_cls, mock_batch):
+        """Test that max_stories parameter limits evaluation."""
+        from pocket_narrator.gemini_api import LLMJudgeScores
+        
+        mock_batch.return_value = [
+            LLMJudgeScores(grammar=3.0, creativity=2.0, consistency=3.0, age_group="C", raw_response=""),
+        ]
+        
+        calculate_llm_judge_scores(
+            story_beginnings=["B1", "B2", "B3", "B4", "B5"],
+            story_completions=["C1", "C2", "C3", "C4", "C5"],
+            api_key="test-key",
+            max_stories=1
+        )
+        
+        # Verify only 1 story was passed to batch evaluation
+        call_args = mock_batch.call_args
+        assert len(call_args[0][0]) == 1
+
+
+class TestRunLLMJudgeEvaluation:
+    """Tests for the run_llm_judge_evaluation function."""
+    
+    @patch("pocket_narrator.evaluate.calculate_llm_judge_scores")
+    def test_returns_dictionary(self, mock_calculate):
+        """Test that function returns a properly formatted dictionary."""
+        mock_calculate.return_value = LLMJudgeResult(
+            avg_grammar=2.5,
+            avg_creativity=2.0,
+            avg_consistency=3.0,
+            age_group_distribution={"c": 2},
+            individual_scores=[],
+            num_evaluated=2,
+            num_failed=0
+        )
+        
+        result = run_llm_judge_evaluation(
+            story_beginnings=["Beginning 1", "Beginning 2"],
+            story_completions=["Completion 1", "Completion 2"],
+            api_key="test-key"
+        )
+        
+        assert isinstance(result, dict)
+        assert result["llm_judge_grammar"] == 2.5
+        assert result["llm_judge_creativity"] == 2.0
+        assert result["llm_judge_consistency"] == 3.0
+        assert result["llm_judge_age_groups"] == {"c": 2}
+        assert result["llm_judge_num_evaluated"] == 2
+        assert result["llm_judge_num_failed"] == 0
+
+
+class TestRunEvaluationWithLLMJudge:
+    """Tests for LLM judge integration in run_evaluation."""
+    
+    def test_llm_judge_disabled_by_default(self):
+        """Test that LLM judge is disabled by default."""
+        result = run_evaluation(
+            predicted_tokens=[],
+            target_tokens=[],
+            predicted_text=[],
+            target_text=[],
+            check_grammar=False
+        )
+        
+        assert result["llm_judge_grammar"] is None
+        assert result["llm_judge_creativity"] is None
+        assert result["llm_judge_consistency"] is None
+        assert result["llm_judge_age_groups"] is None
+    
+    @patch("pocket_narrator.evaluate.run_llm_judge_evaluation")
+    def test_llm_judge_called_when_enabled(self, mock_llm_judge):
+        """Test that LLM judge is called when enabled."""
+        mock_llm_judge.return_value = {
+            "llm_judge_grammar": 7.0,
+            "llm_judge_creativity": 8.0,
+            "llm_judge_consistency": 6.0,
+            "llm_judge_age_groups": {"5-6 years": 1},
+            "llm_judge_num_evaluated": 1,
+            "llm_judge_num_failed": 0,
+        }
+        
+        result = run_evaluation(
+            predicted_tokens=[[1]],
+            target_tokens=[[1]],
+            predicted_text=["Test story"],
+            target_text=["Reference"],
+            story_beginnings=["Story beginning"],
+            check_grammar=False,
+            run_llm_judge=True,
+            llm_judge_api_key="test-key"
+        )
+        
+        assert result["llm_judge_grammar"] == 7.0
+        mock_llm_judge.assert_called_once()
+    
+    @patch("pocket_narrator.evaluate.run_llm_judge_evaluation")
+    def test_llm_judge_receives_custom_parameters(self, mock_llm_judge):
+        """Test that custom parameters are passed to LLM judge."""
+        mock_llm_judge.return_value = {
+            "llm_judge_grammar": 7.0,
+            "llm_judge_creativity": 8.0,
+            "llm_judge_consistency": 6.0,
+            "llm_judge_age_groups": {},
+            "llm_judge_num_evaluated": 1,
+            "llm_judge_num_failed": 0,
+        }
+        
+        custom_template = "Custom template: {story_beginning} {story_completion}"
+        
+        run_evaluation(
+            predicted_tokens=[[1]],
+            target_tokens=[[1]],
+            predicted_text=["Test story"],
+            target_text=["Reference"],
+            story_beginnings=["Beginning"],
+            check_grammar=False,
+            run_llm_judge=True,
+            llm_judge_api_key="test-key",
+            llm_judge_max_stories=5,
+            llm_judge_prompt_template=custom_template
+        )
+        
+        call_kwargs = mock_llm_judge.call_args[1]
+        assert call_kwargs["api_key"] == "test-key"
+        assert call_kwargs["max_stories"] == 5
+        assert call_kwargs["prompt_template"] == custom_template

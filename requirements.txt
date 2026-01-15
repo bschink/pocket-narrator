@@ -39,3 +39,6 @@ wandb
 
 # demo app
 gradio
+
+# Google Gemini API for LLM-as-a-judge evaluation
+google-genai
