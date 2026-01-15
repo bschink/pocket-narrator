@@ -9,7 +9,7 @@ dataset:
   offset: 0
 
 # BPE vocab + LM dataset building
-vocab_size: 2000
+vocab_size: 2048
 block_size: 256
 special_tokens: ["<pad>", "<bos>", "<eos>", "<unk>"]
 min_frequency: 2
