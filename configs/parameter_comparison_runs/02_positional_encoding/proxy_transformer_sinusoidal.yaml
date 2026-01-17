@@ -13,7 +13,7 @@
 #
 # ============================================================================
 
-run_name: "proxy_transformer_vocab_size_10000"
+run_name: "proxy_transformer_sinusoidal"
 
 # ============================================================================
 # DATA CONFIGURATION
@@ -105,7 +105,7 @@ model:
   # Positional encoding type: "sinusoidal" or "rope"
   # sinusoidal: standard transformer positional encoding
   # rope: Rotary Position Embedding (better for longer sequences)
-  pos_encoding_type: "rope"
+  pos_encoding_type: "sinusoidal"
 
   # Attention type: "multi_head" (currently only option)
   attention_type: "multi_head"
@@ -218,7 +218,7 @@ saving:
   # Specific model filename (e.g., "my_model.model")
   # If null, a timestamped name will be auto-generated
   # Format: {model_type}_{YYYYMMDD_HHMMSS}.model
-  model_name: proxy_transformer_vocab_size_10000.model
+  model_name: proxy_transformer_sinusoidal.model
 # ============================================================================
 # NOTES ON PARAMETER SELECTION
 # ============================================================================

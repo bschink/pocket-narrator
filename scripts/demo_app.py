@@ -10,10 +10,10 @@ import gradio as gr
 from pocket_narrator.models import load_model
 from pocket_narrator.tokenizers import get_tokenizer
 
-MODEL_PATH = "models/transformer_20251223_013415.model"
+MODEL_PATH = "models/transformer_28M_higher_lr_full_dataset.model"
 GENERATION_STRATEGY = "sample"
 TOKENIZER_TYPE = "bpe"
-TOKENIZER_PATH = "tokenizers/bpe_tokenizer_5k_eigth_50_rounds"
+TOKENIZER_PATH = "tokenizers/bpe_tokenizer_5k_full_20_rounds"
 MAX_NEW_TOKENS = 5000
 
 def tell_story(prompt, temperature):
