@@ -1,0 +1,253 @@
+# ============================================================================
+# COMPREHENSIVE CONFIG FILE - All Possible Parameters
+# ============================================================================
+# This config documents EVERY parameter available for:
+#   - Data loading & preprocessing
+#   - Tokenizers (BPE, Character)
+#   - Models (Transformer, N-gram)
+#   - Trainers (TransformerTrainer, NGramTrainer)
+#   - Generation & evaluation
+#
+# Usage:
+#   PYTHONPATH=. python3 scripts/train.py --config configs/comprehensive_config.yaml
+#
+# ============================================================================
+
+run_name: "proxy_transformer_swiglu"
+
+# ============================================================================
+# DATA CONFIGURATION
+# ============================================================================
+data:
+  # Path to the training dataset (plain text, one sentence per line)
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.eighth.txt"
+
+  # Fraction of data to use for validation (0.0 to 1.0)
+  val_ratio: 0.2
+
+  # Random seed for reproducibility when splitting train/val
+  random_seed: 42
+
+  # Batch size for training (used in compute_batch_loss for transformers)
+  # N-grams train on the full corpus, but this is still used for validation batching
+  batch_size: 64
+
+# ============================================================================
+# TOKENIZER CONFIGURATION
+# ============================================================================
+tokenizer:
+  # Type of tokenizer: "bpe" or "character"
+  type: "bpe"
+
+  # Path where tokenizer will be saved/loaded
+  path: "tokenizers/bpe_tokenizer_10000_eigth_40_rounds"
+
+  # Tokenizer-specific parameters
+  # These vary based on tokenizer type (see below)
+
+  # ========== BPE TOKENIZER PARAMETERS ==========
+  tokenizer_config:
+    # Vocabulary size (must be >= 256 for BPE, includes special tokens)
+    vocab_size: 10000
+
+    # Number of merge operations to perform per round
+    # Recommended: 200-500 for large datasets
+    merges_per_round: 250
+
+    # Special tokens to include in the vocabulary
+    # Format: list of token strings
+    special_tokens:
+      - "<|endoftext|>"
+      - "<|pad|>"
+      # - "<|bos|>"
+      # - "<|eos|>"
+
+  # ========== CHARACTER TOKENIZER PARAMETERS ==========
+  # (Uncomment to use character tokenizer instead)
+  special_tokens:
+    - "<|endoftext|>"
+    - "<|pad|>"
+  #   - "<unk>"
+  #   - "<bos>"
+  #   - "<eos>"
+
+# ============================================================================
+# MODEL CONFIGURATION
+# ============================================================================
+model:
+  # Model type: "transformer" or "ngram"
+  type: "transformer"
+
+  # ========== TRANSFORMER MODEL PARAMETERS ==========
+  # (Only used when type: "transformer")
+
+  # Model dimension (embedding and hidden size)
+  # Recommended: 64, 128, 256, 512
+  d_model: 128
+
+  # Number of transformer blocks (layers)
+  # Recommended: 2, 4, 6, 8
+  n_layers: 4
+
+  # Number of attention heads
+  # Constraint: d_model must be divisible by n_head
+  # Recommended: 2, 4, 8
+  n_head: 4
+
+  # Maximum sequence length
+  # Tokens beyond this will be truncated during training
+  max_len: 256
+
+  # Dropout rate (0.0 to 1.0)
+  # Typical values: 0.1, 0.2, 0.3
+  dropout: 0.1
+
+  # Positional encoding type: "sinusoidal" or "rope"
+  # sinusoidal: standard transformer positional encoding
+  # rope: Rotary Position Embedding (better for longer sequences)
+  pos_encoding_type: "rope"
+
+  # Attention type: "multi_head" (currently only option)
+  attention_type: "multi_head"
+
+  # Activation function type in feed-forward layers: "gelu" or "swiglu"
+  # gelu: Gaussian Error Linear Unit (standard)
+  # swiglu: SiLU Gated Linear Unit (LLaMA-style, more efficient)
+  activation_type: "swiglu"
+
+  # ========== N-GRAM MODEL PARAMETERS ==========
+  # (Only used when type: "ngram")
+
+  # Order of n-gram (bigram: 2, trigram: 3, etc.)
+  # Must be >= 2
+  # Recommended: 3 for trigram
+  n: 3
+
+# ============================================================================
+# TRAINER CONFIGURATION
+# ============================================================================
+trainer:
+  # Trainer type: "transformer" or "ngram"
+  type: "transformer"
+
+  # ========== TRANSFORMER TRAINER PARAMETERS ==========
+  # (Only used when type: "transformer")
+
+  # Learning rate for Adam optimizer
+  # Typical values: 1e-4, 3e-4, 5e-4, 1e-3
+  learning_rate: 1e-3
+
+  # Number of epochs to train
+  # One epoch = one pass through all training data
+  epochs: 5
+
+  # L2 regularization (weight decay)
+  # Typical values: 0.0, 0.01, 0.1
+  weight_decay: 0.1
+
+  # Maximum gradient norm for clipping
+  # Prevents exploding gradients
+  # Typical values: 1.0, 2.0, None (no clipping)
+  grad_clip: 1.0
+
+  # Number of steps for learning rate warmup
+  # Learning rate linearly increases for this many steps, then decays
+  # Typical values: 0 (no warmup), 100, 500, 1000
+  warmup_steps: 100
+
+  # Whether to use Automatic Mixed Precision (AMP) for faster training on CUDA
+  # Requires GPU, disabled on CPU
+  use_amp: true
+
+  # Whether to enable KV-cache during generation (inference only, not training)
+  # Speeds up generation but uses more memory
+  kv_caching_enabled: true
+
+  # ========== N-GRAM TRAINER PARAMETERS ==========
+  # (Only used when type: "ngram")
+  # N-gram trainer has no special parameters; it trains on entire corpus
+
+# ============================================================================
+# GENERATION & EVALUATION CONFIGURATION
+# ============================================================================
+
+generation:
+  # ========== SHARED PARAMETERS (All Models) ==========
+  # Generation strategy: "greedy" or "sample"
+  # greedy: always pick the most likely next token
+  # sample: randomly sample from the distribution (more creative, varied)
+  strategy: "sample"
+
+  # Maximum number of tokens to generate
+  max_length: 200
+
+  # ========== N-GRAM SPECIFIC PARAMETERS ==========
+  # Size of n-grams to avoid repeating during generation
+  # Set to None to disable
+  # Typical values: 2, 3, 4 (trigram is common)
+  # 0 or None: no repeated n-gram filtering
+  no_repeat_ngram_size: 3
+
+  # ========== TRANSFORMER SPECIFIC PARAMETERS ==========
+  # (These are ignored by n-gram models)
+
+  # Sampling temperature (for strategy: "sample")
+  # < 1.0: more deterministic (closer to greedy)
+  # = 1.0: normal distribution from model
+  # > 1.0: more random
+  # Typical values: 0.7, 1.0, 1.5
+  temperature: 1.0
+
+  # Top-k sampling: only sample from top k most likely tokens
+  # None: disabled (sample from full distribution)
+  # Typical values: 40, 50, 100
+  top_k: null
+
+  # Top-p (nucleus) sampling: sample from smallest set of tokens with cumulative probability >= p
+  # None: disabled
+  # Typical values: 0.9, 0.95
+  top_p: null
+
+# ============================================================================
+# MODEL SAVING CONFIGURATION
+# ============================================================================
+saving:
+  # Directory where trained models will be saved
+  model_dir: "models/transformer"
+
+  # Specific model filename (e.g., "my_model.model")
+  # If null, a timestamped name will be auto-generated
+  # Format: {model_type}_{YYYYMMDD_HHMMSS}.model
+  model_name: proxy_transformer_swiglu.model
+# ============================================================================
+# NOTES ON PARAMETER SELECTION
+# ============================================================================
+#
+# TRANSFORMER SIZING:
+#   Small (fast, low memory):     d_model=64,  n_layers=2, n_head=2
+#   Medium (balanced):            d_model=128, n_layers=4, n_head=4
+#   Large (slow, high memory):    d_model=256, n_layers=8, n_head=8
+#
+# TOKENIZER VOCAB_SIZE:
+#   Too small (< 256):           Insufficient to represent text
+#   Small (256-512):             For limited domains
+#   Medium (512-2048):           Good balance for most tasks
+#   Large (2048-10000):          For diverse text
+#
+# N-GRAM SELECTION:
+#   Bigram (n=2):                Simple, fast, limited quality
+#   Trigram (n=3):               Standard, good performance
+#   4-gram+ (n>=4):              Slower, risk of data sparsity
+#
+# LEARNING RATE:
+#   Too high (1e-3):             Unstable training, poor convergence
+#   Optimal (1e-4 to 5e-4):      Smooth learning
+#   Too low (1e-5):              Slow learning, may not converge
+#
+# GENERATION STRATEGIES:
+#   Greedy:     Deterministic, always same output (boring but consistent)
+#   Sample:     Varied output, creative but may have errors
+#   Top-k:      Reduces poor tokens, balanced quality
+#   Top-p:      Nucleus sampling, more natural
+#
+# ============================================================================
