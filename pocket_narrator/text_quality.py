@@ -71,7 +71,10 @@ class _Embedder:
         self._model = None
 
     def encode(self, sentences: List[str]):
+        if not _HAS_ST:
+            raise RuntimeError("sentence_transformers not installed. Install with: pip install sentence-transformers")
         if self._model is None:
+            from sentence_transformers import SentenceTransformer
             self._model = SentenceTransformer(self.model_name)
         return self._model.encode(sentences, normalize_embeddings=True)
 
