@@ -13,7 +13,7 @@
 #
 # ============================================================================
 
-run_name: "proxy_transformer_vocab_size_10000"
+run_name: "proxy_transformer_linear"
 
 # ============================================================================
 # DATA CONFIGURATION
@@ -108,7 +108,7 @@ model:
   pos_encoding_type: "rope"
 
   # Attention type: "multi_head" (currently only option)
-  attention_type: "multi_head"
+  attention_type: "linear"
 
   # Activation function type in feed-forward layers: "gelu" or "swiglu"
   # gelu: Gaussian Error Linear Unit (standard)
@@ -218,7 +218,7 @@ saving:
   # Specific model filename (e.g., "my_model.model")
   # If null, a timestamped name will be auto-generated
   # Format: {model_type}_{YYYYMMDD_HHMMSS}.model
-  model_name: proxy_transformer_vocab_size_10000.model
+  model_name: proxy_transformer_linear.model
 # ============================================================================
 # NOTES ON PARAMETER SELECTION
 # ============================================================================

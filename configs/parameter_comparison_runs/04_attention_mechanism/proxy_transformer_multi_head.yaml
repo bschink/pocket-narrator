@@ -13,7 +13,7 @@
 #
 # ============================================================================
 
-run_name: "proxy_transformer_vocab_size_10000"
+run_name: "proxy_transformer_multi_head"
 
 # ============================================================================
 # DATA CONFIGURATION
@@ -218,7 +218,7 @@ saving:
   # Specific model filename (e.g., "my_model.model")
   # If null, a timestamped name will be auto-generated
   # Format: {model_type}_{YYYYMMDD_HHMMSS}.model
-  model_name: proxy_transformer_vocab_size_10000.model
+  model_name: proxy_transformer_multi_head.model
 # ============================================================================
 # NOTES ON PARAMETER SELECTION
 # ============================================================================

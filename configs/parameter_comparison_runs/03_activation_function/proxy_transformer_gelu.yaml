@@ -13,7 +13,7 @@
 #
 # ============================================================================
 
-run_name: "proxy_transformer_vocab_size_10000"
+run_name: "proxy_transformer_gelu"
 
 # ============================================================================
 # DATA CONFIGURATION
@@ -113,7 +113,7 @@ model:
   # Activation function type in feed-forward layers: "gelu" or "swiglu"
   # gelu: Gaussian Error Linear Unit (standard)
   # swiglu: SiLU Gated Linear Unit (LLaMA-style, more efficient)
-  activation_type: "swiglu"
+  activation_type: "gelu"
 
   # ========== N-GRAM MODEL PARAMETERS ==========
   # (Only used when type: "ngram")
@@ -218,7 +218,7 @@ saving:
   # Specific model filename (e.g., "my_model.model")
   # If null, a timestamped name will be auto-generated
   # Format: {model_type}_{YYYYMMDD_HHMMSS}.model
-  model_name: proxy_transformer_vocab_size_10000.model
+  model_name: proxy_transformer_gelu.model
 # ============================================================================
 # NOTES ON PARAMETER SELECTION
 # ============================================================================
