@@ -1,0 +1,105 @@
+# ============================================================================
+# Dataset Evaluation Configuration
+# ============================================================================
+# Comprehensive evaluation of TinyStories dataset with all metrics enabled
+# 
+# Usage:
+#   python scripts/evaluate_dataset_comprehensive.py \
+#     --dataset_path configs/dataset_eval_first.yaml
+#
+# Or use command line to override:
+#   python scripts/evaluate_dataset_comprehensive.py \
+#     --config configs/dataset_eval_first.yaml \
+#     --max_stories 500 \
+#     --device mps
+
+# ============================================================================
+# DATASET CONFIGURATION
+# ============================================================================
+dataset:
+  # Path to dataset file (one story per line)
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.30.txt"
+  
+  # Display name for W&B logging
+  name: "TinyStories Clean 30 (Train)"
+  
+  # Maximum number of stories to evaluate (None = all)
+  max_stories: null
+
+# ============================================================================
+# DEVICE CONFIGURATION
+# ============================================================================
+device:
+  # Device for neural models: "cpu", "cuda", "mps" (Mac GPU)
+  type: "mps"
+
+# ============================================================================
+# OPTIONAL METRICS CONFIGURATION
+# ============================================================================
+metrics:
+  # Text quality evaluation (coherence, cohesion)
+  # Requires: optional dependencies
+  text_quality:
+    enabled: true
+  
+  # Noun carryover evaluation (hard & soft coverage)
+  # Requires: spacy + sentence-transformers
+  noun_carryover:
+    enabled: true
+  
+  # LLM-as-a-judge evaluation (grammar, creativity, consistency)
+  # Requires: Google Generative AI API key
+  llm_judge:
+    enabled: true
+    # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
+    api_key: null
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+output:
+  # Save results to JSON file (null = no JSON export)
+  json_path: "results/tinystories_clean_30_eval.json"
+  
+  # W&B logging enabled (requires wandb install + wandb login)
+  wandb_enabled: true
+  
+  # W&B project name
+  wandb_project: "pocket-narrator-eval"
+
+# ============================================================================
+# STORY SPLITTING CONFIGURATION
+# ============================================================================
+splitting:
+  # Method: "midpoint" (50/50 split, matches training script prepare_batch)
+  # This is the only method - uses same split as scripts/train.py
+  method: "midpoint"
+  description: "Splits at midpoint (50%) matching training's prepare_batch()"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# STORY SPLITTING:
+#   - Uses midpoint splitting (50/50) to match scripts/train.py behavior
+#   - First 50%: prompt (used for noun carryover + LLM judge context)
+#   - Second 50%: completion (evaluated)
+#
+# REQUIRED DEPENDENCIES:
+#   - torch, transformers (for grammar score)
+#   - spacy + en_core_web_sm (for noun extraction)
+#   - sentence-transformers (for soft noun matching)
+#   - google-generativeai (for LLM judge)
+#   - wandb (optional, for W&B logging)
+#
+# PERFORMANCE NOTES:
+#   - CPU: ~1-2 stories/minute (text quality disabled)
+#   - Mac GPU (mps): ~5-10 stories/minute
+#   - Full evaluation time depends on dataset size and metrics enabled
+#
+# FIRST RUN:
+#   - Start with max_stories: 10 to test setup
+#   - Check console output for any missing dependencies
+#   - Once working, remove max_stories limit
+#
+# ============================================================================

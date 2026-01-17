@@ -423,6 +423,7 @@ def _load_grammar_pipeline(device_str: str):
     """
     Lazy loader for the DistilBERT CoLA model.
     """
+    import os
     global _GRAMMAR_PIPELINE
     
     if _GRAMMAR_PIPELINE is not None:
@@ -431,13 +432,28 @@ def _load_grammar_pipeline(device_str: str):
     print(f"INFO: Loading DistilBERT-CoLA for grammar evaluation on {device_str}...")
     
     try:
-        curr_device = torch.device(device_str)
+        # Workaround for torch.load vulnerability in older torch versions
+        os.environ['TRANSFORMERS_OFFLINE'] = '0'
         
+        # Convert device string to torch device, handling MPS
+        # Note: transformers pipeline may not support all torch devices directly
+        # so we map to compatible device indices
+        if device_str == "mps":
+            # MPS not directly supported by transformers, fall back to CPU
+            device_idx = -1  # Use CPU
+            print(f"INFO: MPS not natively supported by transformers, using CPU for grammar evaluation")
+        elif device_str == "cuda":
+            device_idx = 0  # Default CUDA device
+        else:
+            device_idx = -1  # CPU
+            
         _GRAMMAR_PIPELINE = pipeline(
             "text-classification", 
             model="textattack/distilbert-base-uncased-CoLA",
-            device=curr_device, 
-            top_k=None # return scores for both labels
+            device=device_idx,  # Use device index instead of torch.device
+            top_k=None, # return scores for both labels
+            trust_remote_code=True,
+            model_kwargs={"use_safetensors": False}
         )
     except Exception as e:
         print(f"ERROR: Could not load grammar pipeline: {e}")
