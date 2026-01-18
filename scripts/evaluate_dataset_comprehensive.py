@@ -107,18 +107,20 @@ def evaluate_story(
     run_text_quality: bool = True,
     run_noun_carryover: bool = True,
     llm_judge_api_key: Optional[str] = None,
+    full_story: Optional[str] = None,
 ) -> Dict:
     """
     Evaluate a single story with all available metrics.
     
     Args:
-        story: Generated story text
-        prompt: Story beginning/prompt
+        story: Generated story text (completion/second half)
+        prompt: Story beginning/prompt (first half)
         device: Device for grammar evaluation ("cpu", "cuda", "mps")
         run_llm_judge: Whether to run LLM judge evaluation
         run_text_quality: Whether to run text quality evaluation
         run_noun_carryover: Whether to run noun carryover evaluation
         llm_judge_api_key: API key for LLM judge
+        full_story: Full story text (used for grammar evaluation on whole story)
         
     Returns:
         Dictionary with all evaluation scores
@@ -134,7 +136,9 @@ def evaluate_story(
     
     # --- 3. Grammar score ---
     try:
-        results["grammar_score"] = calculate_grammar_score([story], device=device)
+        # Use full story if provided, otherwise use completion only
+        grammar_text = full_story if full_story else story
+        results["grammar_score"] = calculate_grammar_score([grammar_text], device=device)
     except Exception as e:
         print(f"WARNING: Grammar evaluation failed: {e}")
         results["grammar_score"] = None
@@ -205,19 +209,19 @@ def evaluate_story(
                 story,
                 soft_cfg=soft_cfg
             )
-            results["noun_hard_coverage"] = metrics.get("hard_coverage")
-            results["noun_hard_jaccard"] = metrics.get("hard_jaccard")
-            results["noun_hard_precision"] = metrics.get("hard_precision")
-            results["noun_soft_coverage"] = metrics.get("soft_coverage")
-            results[f"noun_soft_coverage@{soft_cfg.threshold:.2f}"] = metrics.get(
+            results["noun_carryover_hard_coverage"] = metrics.get("hard_coverage")
+            results["noun_carryover_hard_jaccard"] = metrics.get("hard_jaccard")
+            results["noun_carryover_hard_precision"] = metrics.get("hard_precision")
+            results["noun_carryover_soft_coverage"] = metrics.get("soft_coverage")
+            results[f"noun_carryover_soft_coverage@{soft_cfg.threshold:.2f}"] = metrics.get(
                 f"soft_coverage@{soft_cfg.threshold:.2f}"
             )
         except Exception as e:
             print(f"WARNING: Noun carryover evaluation failed: {e}")
-            results["noun_hard_coverage"] = None
-            results["noun_hard_jaccard"] = None
-            results["noun_hard_precision"] = None
-            results["noun_soft_coverage"] = None
+            results["noun_carryover_hard_coverage"] = None
+            results["noun_carryover_hard_jaccard"] = None
+            results["noun_carryover_hard_precision"] = None
+            results["noun_carryover_soft_coverage"] = None
             results[f"noun_soft_coverage@{0.70:.2f}"] = None
     else:
         results["noun_hard_coverage"] = None
@@ -285,6 +289,9 @@ def main():
     run_llm_judge = args.run_llm_judge is True or metrics_config.get("llm_judge", {}).get("enabled", False)
     llm_judge_api_key = args.llm_judge_api_key or metrics_config.get("llm_judge", {}).get("api_key")
     
+    # Debug: Show metric settings
+    print(f"Metrics Config - text_quality: {run_text_quality}, noun_carryover: {run_noun_carryover}, llm_judge: {run_llm_judge}")
+    
     # Validate that dataset_path is provided
     if not dataset_path:
         parser.error("--dataset_path or --config with dataset.path is required")
@@ -338,14 +345,15 @@ def main():
             run_text_quality=run_text_quality,
             run_noun_carryover=run_noun_carryover,
             llm_judge_api_key=llm_judge_api_key,
+            full_story=story,  # Pass full story for grammar evaluation
         )
         
         # Package result with story info
         result_row = {
             "dataset": dataset_name,
             "story_id": idx,
-            "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
-            "completion": completion[:100] + "..." if len(completion) > 100 else completion,
+            "prompt": prompt,
+            "completion": completion,
             **eval_results
         }
         all_results.append(result_row)
@@ -434,8 +442,8 @@ def main():
             "repetition": ["repetition_rate"],
             "grammar": ["grammar_score"],
             "text_quality": ["text_quality_coherence", "text_quality_cohesion", "text_quality_score"],
-            "noun_carryover": ["noun_hard_coverage", "noun_hard_jaccard", "noun_hard_precision", 
-                              "noun_soft_coverage", "noun_soft_coverage@0.70"],
+            "noun_carryover": ["noun_carryover_hard_coverage", "noun_carryover_hard_jaccard", "noun_carryover_hard_precision", 
+                              "noun_carryover_soft_coverage", "noun_carryover_soft_coverage@0.70"],
             "llm_judge": ["llm_judge_grammar", "llm_judge_creativity", "llm_judge_consistency"],
             "statistics": ["word_count", "sentence_count"],
         }

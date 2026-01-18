@@ -50,7 +50,7 @@ metrics:
   # LLM-as-a-judge evaluation (grammar, creativity, consistency)
   # Requires: Google Generative AI API key
   llm_judge:
-    enabled: true
+    enabled: false
     # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
     api_key: null
 
