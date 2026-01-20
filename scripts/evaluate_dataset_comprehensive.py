@@ -129,10 +129,10 @@ def evaluate_story(
     
     # --- 1. Distinct-n ---
     for n in (1, 2, 3):
-        results[f"distinct_{n}"] = distinct_n([story], n=n)
+        results[f"distinct_{n}"] = distinct_n([full_story] if full_story else [story], n=n)
     
     # --- 2. Repetition rate ---
-    results["repetition_rate"] = repetition_rate([story])
+    results["repetition_rate"] = repetition_rate([full_story] if full_story else [story])
     
     # --- 3. Grammar score ---
     try:
@@ -144,8 +144,9 @@ def evaluate_story(
         results["grammar_score"] = None
     
     # --- 4. Word and sentence count ---
-    results["word_count"] = count_words([story])
-    results["sentence_count"] = count_sentences([story])
+    count_text = full_story if full_story else story
+    results["word_count"] = count_words([count_text])
+    results["sentence_count"] = count_sentences([count_text])
     
     # --- 5. LLM Judge (optional) ---
     if run_llm_judge:

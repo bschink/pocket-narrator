@@ -331,10 +331,11 @@ def evaluate_story(
         print(f"Warning: Error computing grammar_score: {e}")
         results["grammar_score"] = None
     
-    # --- 4. Statistics (on generated text)
+    # --- 4. Statistics (on full story: prompt + generated)
     try:
-        results["word_count"] = count_words([generated])
-        results["sentence_count"] = count_sentences([generated])
+        full_generated = prompt + generated
+        results["word_count"] = count_words([full_generated])
+        results["sentence_count"] = count_sentences([full_generated])
     except Exception as e:
         print(f"Warning: Error computing statistics: {e}")
         results["word_count"] = None
@@ -620,12 +621,18 @@ def main():
     if _HAS_TEXT_QUALITY and metrics_config.get("text_quality", {}).get("enabled", True):
         text_quality_config = TextQualityConfig(use_sentence_transformers=True)
         text_quality_embedder = _Embedder("all-MiniLM-L6-v2")
+        # Move embedder to GPU for faster computation
+        if hasattr(text_quality_embedder, 'to'):
+            text_quality_embedder.to(device)
     
     noun_carryover_config = None
     noun_carryover_embedder = None
     if _HAS_NOUN_CARRYOVER and metrics_config.get("noun_carryover", {}).get("enabled", True):
         noun_carryover_config = SoftConfig()
         noun_carryover_embedder = SoftEmbedder("all-MiniLM-L6-v2")
+        # Move embedder to GPU for faster computation
+        if hasattr(noun_carryover_embedder, 'to'):
+            noun_carryover_embedder.to(device)
     
     # --- Evaluate Stories ---
     print(f"\nEvaluating {len(stories)} stories...")
