@@ -1,0 +1,102 @@
+# ============================================================================
+# LLM Agent-Only Evaluation Configuration
+# ============================================================================
+# Evaluation using only LLM-as-a-judge metrics on dataset stories
+# 
+# Usage:
+#   python scripts/evaluate_llm_agent_only.py \
+#     --config configs/evaluation/llm_agent_eval.yaml
+#
+# Or use command line to override:
+#   python scripts/evaluate_llm_agent_only.py \
+#     --config configs/evaluation/llm_agent_eval.yaml \
+#     --max_stories 100 \
+#     --api_key YOUR_API_KEY
+
+# ============================================================================
+# DATASET CONFIGURATION
+# ============================================================================
+dataset:
+  # Path to dataset file (one story per line)
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.30.txt"
+  
+  # Display name for W&B logging
+  name: "TinyStories Clean 30 (LLM Agent)"
+  
+  # Maximum number of stories to evaluate (None = all)
+  max_stories: 10
+
+# ============================================================================
+# LLM JUDGE CONFIGURATION
+# ============================================================================
+llm_judge:
+  # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
+  # Set via: export GOOGLE_API_KEY="your_key"
+  # Or provide via: --api_key YOUR_API_KEY on command line
+  api_key: AIzaSyC4KX0p6LhYjBOmVn_BM90rsO5k_THsMoY
+  
+  # Random sampling for LLM judge (expensive API calls)
+  # Only N stories will be evaluated with LLM judge, rest get null values
+  sample_size: 1000      # number of stories to sample (None = all)
+  random_seed: 42        # seed for reproducibility
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+output:
+  # Save results to JSON file (null = no JSON export)
+  json_path: "results/llm_agent_eval_results.json"
+  
+  # W&B logging enabled (requires wandb install + wandb login)
+  wandb_enabled: true
+  
+  # W&B project name
+  wandb_project: "pocket-narrator-eval"
+
+# ============================================================================
+# STORY SPLITTING CONFIGURATION
+# ============================================================================
+splitting:
+  # Method: "midpoint" (50/50 split, matches training script prepare_batch)
+  # This is the only method - uses same split as scripts/train.py
+  method: "midpoint"
+  description: "Splits at midpoint (50%) matching training's prepare_batch()"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# LLM JUDGE METRICS:
+#   - Grammar Score (1-3 scale): Evaluates grammatical correctness
+#   - Creativity Score (1-3 scale): Evaluates originality and imagination
+#   - Consistency Score (1-3 scale): Evaluates coherence with story beginning
+#   - Age Groups: Categorizes appropriateness for age groups A-F
+#
+# STORY SPLITTING:
+#   - Uses midpoint splitting (50/50) to match scripts/train.py behavior
+#   - First 50%: prompt (context for LLM judge)
+#   - Second 50%: completion (evaluated)
+#
+# REQUIRED DEPENDENCIES:
+#   - google-generativeai (for LLM judge API calls)
+#   - wandb (optional, for W&B logging)
+#   - pandas (optional, for plot generation in W&B)
+#
+# API KEY SETUP:
+#   1. Get API key from: https://makersuite.google.com/app/apikey
+#   2. Set environment variable:
+#      export GOOGLE_API_KEY="your_key"
+#   3. Or pass directly via command line:
+#      --api_key YOUR_API_KEY
+#
+# PERFORMANCE NOTES:
+#   - API rate limited: ~10-30 seconds per story depending on API limits
+#   - Full evaluation of 100 stories: ~30-60 minutes
+#   - Respects Google API rate limits automatically
+#
+# FIRST RUN:
+#   - Start with max_stories: 5 to test API key and setup
+#   - Check console output for successful API calls
+#   - Once working, increase max_stories or remove limit
+#
+# ============================================================================

@@ -10,7 +10,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-DEFAULT_MODEL = "gemini-2.5-flash-lite-preview-09-2025"
+# DEFAULT_MODEL = "gemini-2.5-flash-lite-preview-09-2025"
+DEFAULT_MODEL = "gemini-3-flash-preview"
 
 
 @dataclass
@@ -112,48 +113,54 @@ def parse_llm_judge_response(response: str) -> LLMJudgeScores:
     """
     Parse the structured response from the LLM judge.
     
-    Expected format in response (XML-like tags):
-        <grammar><score 1-3></grammar>
-        <creativity><score 1-3></creativity>
-        <consistency><score 1-3></consistency>
-        <age_group><single letter A-F></age_group>
+    Looks for scores in XML-like tags anywhere in the response:
+        <grammar>2</grammar>
+        <creativity>1</creativity>
+        <consistency>3</consistency>
+        <age_group>C</age_group>
     
     Args:
         response: Raw text response from the LLM.
         
     Returns:
         LLMJudgeScores dataclass with parsed values.
-        
-    Raises:
-        ValueError: If the response cannot be parsed.
     """
+    if not response or response.strip() == "":
+        print(f"WARNING: Empty response from LLM")
+        return LLMJudgeScores(grammar=0.0, creativity=0.0, consistency=0.0, age_group="error", raw_response="EMPTY")
+    
     grammar = 0.0
     creativity = 0.0
     consistency = 0.0
     age_group = "unknown"
     
-    # Pattern to match scores inside XML-like tags: <grammar>2</grammar>
-    grammar_match = re.search(r"<grammar>\s*(\d+(?:\.\d+)?)\s*</grammar>", response, re.IGNORECASE)
+    # More lenient regex patterns that work even with extra whitespace/content
+    # Look for <grammar>NUMBER</grammar> anywhere in response
+    grammar_match = re.search(r"<\s*grammar\s*>\s*(\d+(?:\.\d+)?)\s*<\s*/\s*grammar\s*>", response, re.IGNORECASE | re.DOTALL)
     if grammar_match:
         grammar = float(grammar_match.group(1))
         if grammar > 3:
             grammar = 3.0
     
-    creativity_match = re.search(r"<creativity>\s*(\d+(?:\.\d+)?)\s*</creativity>", response, re.IGNORECASE)
+    creativity_match = re.search(r"<\s*creativity\s*>\s*(\d+(?:\.\d+)?)\s*<\s*/\s*creativity\s*>", response, re.IGNORECASE | re.DOTALL)
     if creativity_match:
         creativity = float(creativity_match.group(1))
         if creativity > 3:
             creativity = 3.0
     
-    consistency_match = re.search(r"<consistency>\s*(\d+(?:\.\d+)?)\s*</consistency>", response, re.IGNORECASE)
+    consistency_match = re.search(r"<\s*consistency\s*>\s*(\d+(?:\.\d+)?)\s*<\s*/\s*consistency\s*>", response, re.IGNORECASE | re.DOTALL)
     if consistency_match:
         consistency = float(consistency_match.group(1))
         if consistency > 3:
             consistency = 3.0
     
-    age_match = re.search(r"<age_group>\s*([A-Fa-f])\s*</age_group>", response, re.IGNORECASE)
+    age_match = re.search(r"<\s*age_group\s*>\s*([A-Fa-f])\s*<\s*/\s*age_group\s*>", response, re.IGNORECASE | re.DOTALL)
     if age_match:
         age_group = age_match.group(1).strip().upper()
+    
+    # Log success or failure
+    if grammar == 0.0 or creativity == 0.0 or consistency == 0.0:
+        print(f"DEBUG: Parsing response (partial): {response[:150]}")
     
     return LLMJudgeScores(
         grammar=grammar,
@@ -169,10 +176,11 @@ def evaluate_story_with_llm(
     story_completion: str,
     prompt_template: str,
     client: Optional[GeminiClient] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    max_retries: int = 3
 ) -> LLMJudgeScores:
     """
-    Evaluate a single story using LLM-as-a-judge.
+    Evaluate a single story using LLM-as-a-judge with retry logic.
     
     Args:
         story_beginning: The prompt/beginning given to the model.
@@ -181,6 +189,7 @@ def evaluate_story_with_llm(
                         Use {story_beginning} and {story_completion} as placeholders.
         client: Optional pre-initialized GeminiClient.
         api_key: API key (used if client is None).
+        max_retries: Number of times to retry on empty response.
         
     Returns:
         LLMJudgeScores with evaluation results.
@@ -192,9 +201,27 @@ def evaluate_story_with_llm(
         story_beginning=story_beginning,
         story_completion=story_completion
     )
-    response = client.generate(prompt, temperature=0.3)
     
-    return parse_llm_judge_response(response)
+    # Retry on empty responses
+    for attempt in range(max_retries):
+        response = client.generate(prompt, temperature=0.3)
+        
+        # Check if response is empty
+        if response and response.strip():
+            return parse_llm_judge_response(response)
+        
+        if attempt < max_retries - 1:
+            print(f"DEBUG: Empty response (attempt {attempt + 1}/{max_retries}), retrying...")
+    
+    # All retries failed
+    print(f"WARNING: Empty response after {max_retries} retries")
+    return LLMJudgeScores(
+        grammar=0.0,
+        creativity=0.0,
+        consistency=0.0,
+        age_group="error",
+        raw_response="EMPTY_AFTER_RETRIES"
+    )
 
 
 def evaluate_stories_batch(
@@ -245,40 +272,29 @@ def evaluate_stories_batch(
     return results
 
 
-DEFAULT_EVALUATION_PROMPT = """
-You are an expert evaluator of children's stories. 
-In the following exercise, the student is given a beginning of a story. The student needs to complete it into a full story.
-The exercise tests the student's language abilities and creativity. 
-The beginning of the story is wrapped in <story_beginning> and the student's completion is wrapped in <story_completion>.
+DEFAULT_EVALUATION_PROMPT = """You are an expert evaluator of student story completions. Evaluate the student's completion based on:
 
-First provide your general assessment about the part written by the student (<story_completion>).
-Is it gramatically correct? Is it consistent with the beginning of the story? Pay special attention to whether the
-student manages to complete the sentence which began in <story_beginning> but wasn't finished if that's the case.
+1. Grammar (score 1-3): Is the completion grammatically correct?
+2. Creativity (score 1-3): Is it creative and imaginative?
+3. Consistency (score 1-3): Does it logically fit with the story beginning?
+4. Age Group (letter A-F): What age group is this appropriate for?
+   A: 3 or under, B: 4-5, C: 6-7, D: 8-9, E: 10-12, F: 13-16
 
-Afterwards, grade the student’s completion in terms of grammar, creativity, consistency with the story’s beginning and
-whether the plot makes sense. Moreover, please provide your best guess of what the age of the student might be,
-as reflected from the completion. Choose from possible age groups: A: 3 or under. B: 4-5. C: 6-7. D: 8-9. E:
-10-12. F: 13-16. Please evaluate the model's completion based on these criteria, providing a score from 1-3 for each:
-
-1. Grammar: How grammatically correct is the completion?
-2. Creativity: How creative and imaginative is the completion?
-3. Consistency: How logically consistent is the completion with the beginning?
-4. Age group: What age group is this story appropriate for?
-   (A: 3 or under, B: 4-5, C: 6-7, D: 8-9, E: 10-12, F: 13-16)
-
-Story beginning (given in the exercise):
+Story Beginning (what was given to the student):
 <story_beginning>
 {story_beginning}
 </story_beginning>
 
-Students completion:
+Student's Completion (what the student wrote):
 <story_completion>
 {story_completion}
 </story_completion>
 
-Please frame your evaluation in exactly this format:
-<grammar><score 1-3></grammar>
-<creativity><score 1-3></creativity>
-<consistency><score 1-3></consistency>
-<age_group><single letter A-F></age_group>
+Output your evaluation in exactly this XML format, with no additional text before or after:
+<grammar>1</grammar>
+<creativity>1</creativity>
+<consistency>1</consistency>
+<age_group>A</age_group>
+
+Replace the example values with your actual scores. Scores must be 1, 2, or 3. Age group must be A, B, C, D, E, or F.
 """
