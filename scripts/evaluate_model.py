@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict, List
 import sys
 import yaml
+import random
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -556,6 +557,11 @@ def main():
     # Metrics from config (CLI args take precedence)
     metrics_config = config.get("metrics", {})
     
+    # LLM Judge sampling settings
+    llm_judge_config = metrics_config.get("llm_judge", {})
+    llm_judge_sample_size = llm_judge_config.get("sample_size", 1000)
+    llm_judge_random_seed = llm_judge_config.get("random_seed", 42)
+    
     # Validate that required arguments are provided
     if not model_path:
         parser.error("--model_path or --config with model.path is required")
@@ -613,6 +619,19 @@ def main():
         print(f"Error loading dataset: {e}")
         return
     
+    # For LLM Judge evaluation: randomly sample 1000 stories with seeding
+    llm_judge_enabled = metrics_config.get("llm_judge", {}).get("enabled", False)
+    llm_judge_stories_indices = None
+    if llm_judge_enabled:
+        if len(stories) > llm_judge_sample_size:
+            random.seed(llm_judge_random_seed)
+            llm_judge_stories_indices = set(sorted(random.sample(range(len(stories)), llm_judge_sample_size)))
+            print(f"\nLLM Judge: Sampling {llm_judge_sample_size} stories (seed={llm_judge_random_seed}) for evaluation")
+            print(f"  Selected story indices: first {sorted(list(llm_judge_stories_indices))[:10]}... (showing first 10)")
+        else:
+            llm_judge_stories_indices = set(range(len(stories)))
+            print(f"\nLLM Judge: Using all {len(stories)} stories (less than {llm_judge_sample_size} available)")
+    
     # --- Setup Optional Metrics ---
     metrics_config = config.get("metrics", {})
     
@@ -662,6 +681,12 @@ def main():
             print(f"  Error generating for story {idx}: {e}")
             continue
         
+        # Determine if this story should be evaluated with LLM judge
+        eval_metrics_config = metrics_config.copy()
+        if llm_judge_enabled and (llm_judge_stories_indices is None or idx not in llm_judge_stories_indices):
+            # Disable LLM judge for this story
+            eval_metrics_config["llm_judge"] = {"enabled": False}
+        
         # Evaluate
         try:
             result = evaluate_story(
@@ -672,7 +697,7 @@ def main():
                 tokenizer=tokenizer,
                 model_type=model_type,
                 device=device,
-                metrics_config=metrics_config,
+                metrics_config=eval_metrics_config,
                 text_quality_config=text_quality_config,
                 text_quality_embedder=text_quality_embedder,
                 noun_carryover_config=noun_carryover_config,

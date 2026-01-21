@@ -96,6 +96,9 @@ metrics:
     enabled: false
     # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
     api_key: null
+    # Random sampling for LLM judge (expensive API calls)
+    sample_size: 1000      # number of stories to sample (None = all)
+    random_seed: 42        # seed for reproducibility
 
 # ============================================================================
 # OUTPUT CONFIGURATION

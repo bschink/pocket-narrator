@@ -23,6 +23,7 @@ Usage:
 import argparse
 import json
 import math
+import random
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
 import sys
@@ -283,6 +284,11 @@ def main():
     output_json = args.output_json or config.get("output", {}).get("json_path")
     wandb_project = config.get("output", {}).get("wandb_project", "pocket-narrator")
     
+    # LLM Judge sampling settings
+    llm_judge_config = config.get("metrics", {}).get("llm_judge", {})
+    llm_judge_sample_size = llm_judge_config.get("sample_size", 1000)
+    llm_judge_random_seed = llm_judge_config.get("random_seed", 42)
+    
     # Metrics from config (CLI args take precedence)
     metrics_config = config.get("metrics", {})
     run_text_quality = args.run_text_quality is True or metrics_config.get("text_quality", {}).get("enabled", False)
@@ -322,6 +328,19 @@ def main():
     print(f"Loaded {len(stories)} stories")
     print("Using midpoint splitting (50/50) matching training script prepare_batch()\n")
     
+    # For LLM Judge evaluation: randomly sample 1000 stories with seeding
+    llm_judge_stories_indices = None
+    if run_llm_judge:
+        if len(stories) > llm_judge_sample_size:
+            random.seed(llm_judge_random_seed)
+            llm_judge_stories_indices = set(sorted(random.sample(range(len(stories)), llm_judge_sample_size)))
+            print(f"LLM Judge: Sampling {llm_judge_sample_size} stories (seed={llm_judge_random_seed}) for evaluation")
+            print(f"  Selected story indices: first {sorted(list(llm_judge_stories_indices))[:10]}... (showing first 10)")
+        else:
+            llm_judge_stories_indices = set(range(len(stories)))
+            print(f"LLM Judge: Using all {len(stories)} stories (less than {llm_judge_sample_size} available)")
+        print()
+    
     # Evaluate all stories
     print("Evaluating stories...")
     all_results = []
@@ -337,12 +356,15 @@ def main():
             print(f"WARNING: Story {idx} has no completion after split, skipping")
             continue
         
+        # Decide whether to run LLM judge for this story
+        run_llm_judge_for_story = run_llm_judge and (llm_judge_stories_indices is None or idx in llm_judge_stories_indices)
+        
         # Evaluate
         eval_results = evaluate_story(
             story=completion,
             prompt=prompt,
             device=device,
-            run_llm_judge=run_llm_judge,
+            run_llm_judge=run_llm_judge_for_story,
             run_text_quality=run_text_quality,
             run_noun_carryover=run_noun_carryover,
             llm_judge_api_key=llm_judge_api_key,
