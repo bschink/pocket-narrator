@@ -157,7 +157,7 @@ trainer:
 
   # Whether to use Automatic Mixed Precision (AMP) for faster training on CUDA
   # Requires GPU, disabled on CPU
-  use_amp: true
+  use_amp: false
 
   # Whether to enable KV-cache during generation (inference only, not training)
   # Speeds up generation but uses more memory

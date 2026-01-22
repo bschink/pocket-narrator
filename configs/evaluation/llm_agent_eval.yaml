@@ -33,7 +33,7 @@ llm_judge:
   # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
   # Set via: export GOOGLE_API_KEY="your_key"
   # Or provide via: --api_key YOUR_API_KEY on command line
-  api_key: AIzaSyC4KX0p6LhYjBOmVn_BM90rsO5k_THsMoY
+  api_key: null
   
   # Random sampling for LLM judge (expensive API calls)
   # Only N stories will be evaluated with LLM judge, rest get null values
