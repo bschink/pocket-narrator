@@ -294,7 +294,18 @@ def main():
     run_text_quality = args.run_text_quality is True or metrics_config.get("text_quality", {}).get("enabled", False)
     run_noun_carryover = args.run_noun_carryover is True or metrics_config.get("noun_carryover", {}).get("enabled", False)
     run_llm_judge = args.run_llm_judge is True or metrics_config.get("llm_judge", {}).get("enabled", False)
-    llm_judge_api_key = args.llm_judge_api_key or metrics_config.get("llm_judge", {}).get("api_key")
+    llm_judge_api_key = args.llm_judge_api_key
+    
+    # --- Prompt for API Key if LLM Judge is Enabled ---
+    if run_llm_judge and not llm_judge_api_key:
+        print("\n" + "="*80)
+        print("LLM Judge evaluation is enabled, but no API key provided.")
+        print("Please enter your Google Gemini API key:")
+        print("="*80)
+        llm_judge_api_key = input("Google Gemini API Key: ").strip()
+        if not llm_judge_api_key:
+            print("ERROR: API key is required for LLM judge evaluation")
+            return
     
     # Debug: Show metric settings
     print(f"Metrics Config - text_quality: {run_text_quality}, noun_carryover: {run_noun_carryover}, llm_judge: {run_llm_judge}")

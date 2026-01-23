@@ -280,6 +280,7 @@ def evaluate_story(
     text_quality_embedder: Optional['_Embedder'] = None,
     noun_carryover_config: Optional['SoftConfig'] = None,
     noun_carryover_embedder: Optional['SoftEmbedder'] = None,
+    llm_judge_api_key: Optional[str] = None,
 ) -> Dict:
     """
     Evaluate a single prompt-generated-ground_truth triple.
@@ -346,7 +347,7 @@ def evaluate_story(
     llm_judge_enabled = metrics_config.get("llm_judge", {}).get("enabled", False) if metrics_config else False
     if llm_judge_enabled:
         try:
-            llm_results = run_llm_judge_evaluation([prompt], [generated])
+            llm_results = run_llm_judge_evaluation([prompt], [generated], api_key=llm_judge_api_key)
             if llm_results:
                 results["llm_judge_grammar"] = llm_results.get("llm_judge_grammar")
                 results["llm_judge_creativity"] = llm_results.get("llm_judge_creativity")
@@ -527,6 +528,12 @@ def main():
         default=None,
         help="Device to use (cuda, mps, or cpu). If not provided, auto-selects based on availability."
     )
+    parser.add_argument(
+        "--llm_judge_api_key",
+        type=str,
+        default=None,
+        help="API key for LLM judge (will prompt if not provided and LLM judge is enabled)"
+    )
     
     args = parser.parse_args()
     
@@ -562,6 +569,9 @@ def main():
     llm_judge_sample_size = llm_judge_config.get("sample_size", 1000)
     llm_judge_random_seed = llm_judge_config.get("random_seed", 42)
     
+    # LLM Judge API key handling
+    llm_judge_api_key = args.llm_judge_api_key
+    
     # Validate that required arguments are provided
     if not model_path:
         parser.error("--model_path or --config with model.path is required")
@@ -575,6 +585,17 @@ def main():
     
     # Generation parameters
     generation_kwargs = config.get("generation", {})
+    
+    # --- Prompt for API Key if LLM Judge is Enabled ---
+    if metrics_config.get("llm_judge", {}).get("enabled", False) and not llm_judge_api_key:
+        print("\n" + "="*80)
+        print("LLM Judge evaluation is enabled, but no API key provided.")
+        print("Please enter your Google Gemini API key:")
+        print("="*80)
+        llm_judge_api_key = input("Google Gemini API Key: ").strip()
+        if not llm_judge_api_key:
+            print("ERROR: API key is required for LLM judge evaluation")
+            return
     
     # --- Print Configuration ---
     print("\n" + "="*80)
@@ -702,6 +723,7 @@ def main():
                 text_quality_embedder=text_quality_embedder,
                 noun_carryover_config=noun_carryover_config,
                 noun_carryover_embedder=noun_carryover_embedder,
+                llm_judge_api_key=llm_judge_api_key,
             )
             result["model"] = model_type
             result["dataset"] = dataset_name

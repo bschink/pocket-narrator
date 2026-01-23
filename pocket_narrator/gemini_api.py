@@ -10,8 +10,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-# DEFAULT_MODEL = "gemini-2.5-flash-lite-preview-09-2025"
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-2.5-flash-lite-preview-09-2025"
+# DEFAULT_MODEL = "gemini-3-flash-preview"
 
 
 @dataclass
