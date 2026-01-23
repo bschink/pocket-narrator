@@ -43,6 +43,13 @@ import sys
 import yaml
 import random
 
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+    tqdm = lambda x, **kwargs: x
+
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -62,6 +69,7 @@ from pocket_narrator.evaluate import (
     count_words,
     count_sentences,
     run_llm_judge_evaluation,
+    LLM_JUDGE_PROMPT_TEMPLATE,
     calculate_bleu, #unique to model eval
     calculate_rouge_n, #unique to model eval
     calculate_rouge_l, #unique to model eval
@@ -227,10 +235,27 @@ def calculate_perplexity(
                 return float('nan')
             
             try:
+                # Get model's max sequence length if available
+                max_seq_len = 512  # default
+                if hasattr(model, 'config'):
+                    max_seq_len = getattr(model.config, 'max_position_embeddings', 512)
+                elif hasattr(model, 'max_seq_len'):
+                    max_seq_len = model.max_seq_len
+                
+                # Truncate if necessary
+                if len(tokens) > max_seq_len:
+                    # Use last max_seq_len tokens for perplexity
+                    tokens = tokens[-max_seq_len:]
+                
                 # Prepare input and target for language modeling
                 # Input: all tokens except last, Target: all tokens except first
                 input_ids = torch.tensor([tokens[:-1]], device=device)
                 target_ids = torch.tensor([tokens[1:]], device=device)
+                
+                # Verify tensor shapes match
+                if input_ids.shape[1] != target_ids.shape[1]:
+                    print(f"Warning: Tensor shape mismatch in perplexity (input: {input_ids.shape}, target: {target_ids.shape})")
+                    return float('nan')
                 
                 with torch.no_grad():
                     # Forward pass to get logits
@@ -242,6 +267,11 @@ def calculate_perplexity(
                     else:
                         logits = output
                     
+                    # Verify logits shape
+                    if logits.shape[0] != 1 or logits.shape[1] != input_ids.shape[1]:
+                        print(f"Warning: Logits shape mismatch (logits: {logits.shape}, expected: (1, {input_ids.shape[1]}, vocab_size))")
+                        return float('nan')
+                    
                     # Compute cross-entropy loss
                     # Reshape: (batch * seq_len, vocab_size) vs (batch * seq_len,)
                     loss = F.cross_entropy(
@@ -251,8 +281,31 @@ def calculate_perplexity(
                     )
                     
                     return math.exp(loss.item())
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    print(f"Warning: GPU out of memory during perplexity computation, using shorter sequence")
+                    # Try with shorter sequence
+                    try:
+                        truncated_tokens = tokens[-256:] if len(tokens) > 256 else tokens
+                        input_ids = torch.tensor([truncated_tokens[:-1]], device="cpu")
+                        target_ids = torch.tensor([truncated_tokens[1:]], device="cpu")
+                        
+                        with torch.no_grad():
+                            output = model(input_ids)
+                            if isinstance(output, tuple):
+                                logits = output[0]
+                            else:
+                                logits = output
+                            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target_ids.view(-1), reduction='mean')
+                            return math.exp(loss.item())
+                    except Exception as e2:
+                        print(f"Warning: Perplexity computation failed on CPU as well: {e2}")
+                        return float('nan')
+                else:
+                    print(f"Warning: Forward pass perplexity computation failed: {e}")
+                    return float('nan')
             except Exception as e:
-                print(f"Warning: Forward pass perplexity computation failed: {e}")
+                print(f"Warning: Perplexity computation failed: {e}")
                 return float('nan')
         
         else:
@@ -261,6 +314,282 @@ def calculate_perplexity(
     except Exception as e:
         print(f"Warning: Could not compute perplexity: {e}")
         return float('nan')
+
+
+# ============================================================================
+# BATCH EVALUATION FUNCTION (GPU-optimized)
+# ============================================================================
+
+def evaluate_story_batch(
+    batch_data: List[Tuple[int, str, str, str]],  # [(global_idx, prompt, generated, ground_truth), ...]
+    model=None,
+    tokenizer=None,
+    model_type: str = "transformer",
+    device: str = "cpu",
+    metrics_config: Optional[Dict] = None,
+    text_quality_config: Optional['TextQualityConfig'] = None,
+    text_quality_embedder: Optional['_Embedder'] = None,
+    noun_carryover_config: Optional['SoftConfig'] = None,
+    noun_carryover_embedder: Optional['SoftEmbedder'] = None,
+    llm_judge_api_key: Optional[str] = None,
+    llm_judge_stories_indices: Optional[List[int]] = None,
+) -> List[Dict]:
+    """
+    Batch evaluate multiple stories with GPU optimization.
+    
+    Batches neural operations (embeddings, perplexity) for efficiency.
+    Only does sequential processing for expensive operations (LLM judge).
+    
+    Args:
+        batch_data: List of (global_idx, prompt, generated, ground_truth) tuples
+        
+    Returns:
+        List of result dictionaries
+    """
+    import torch
+    import torch.nn.functional as F
+    
+    if not batch_data:
+        return []
+    
+    results_list = []
+    batch_size = len(batch_data)
+    
+    # Extract batch components
+    prompts = [d[1] for d in batch_data]
+    generateds = [d[2] for d in batch_data]
+    ground_truths = [d[3] for d in batch_data]
+    global_indices = [d[0] for d in batch_data]
+    
+    # --- PHASE 2A: Batch GPU computations (text quality, perplexity) ---
+    
+    # Pre-compute text quality embeddings if enabled
+    tq_results_batch = [None] * batch_size
+    if _HAS_TEXT_QUALITY and metrics_config.get("text_quality", {}).get("enabled", True):
+        try:
+            # Batch embedding computation
+            tq_results_batch = []
+            for generated in generateds:
+                try:
+                    tq_results = evaluate_text_quality(
+                        generated,
+                        cfg=text_quality_config,
+                        embedder=text_quality_embedder
+                    )
+                    # Ensure it's a dict, not a float or other type
+                    if isinstance(tq_results, dict):
+                        tq_results_batch.append(tq_results)
+                    else:
+                        tq_results_batch.append(None)
+                except Exception as e:
+                    tq_results_batch.append(None)
+        except Exception as e:
+            print(f"    ⚠ Batch text quality failed: {e}")
+            tq_results_batch = [None] * batch_size
+    
+    # Pre-compute perplexity for all stories in batch
+    perplexity_batch = [None] * batch_size
+    if model and tokenizer:
+        try:
+            # Batch tokenization
+            all_tokens = []
+            for ground_truth in ground_truths:
+                try:
+                    tokens = tokenizer.encode(ground_truth)
+                    if isinstance(tokens, list):
+                        all_tokens.append(tokens)
+                    else:
+                        all_tokens.append(tokens.tolist() if hasattr(tokens, 'tolist') else list(tokens))
+                except:
+                    all_tokens.append([])
+            
+            # Batch perplexity computation (process in smaller sub-batches if needed)
+            max_seq_len = 512
+            if hasattr(model, 'config'):
+                max_seq_len = getattr(model.config, 'max_position_embeddings', 512)
+            
+            with torch.no_grad():
+                for batch_idx, tokens in enumerate(all_tokens):
+                    if len(tokens) < 2:
+                        perplexity_batch[batch_idx] = float('nan')
+                        continue
+                    
+                    try:
+                        # Truncate
+                        if len(tokens) > max_seq_len:
+                            tokens = tokens[-max_seq_len:]
+                        
+                        input_ids = torch.tensor([tokens[:-1]], device=device)
+                        target_ids = torch.tensor([tokens[1:]], device=device)
+                        
+                        if input_ids.shape[1] != target_ids.shape[1]:
+                            perplexity_batch[batch_idx] = float('nan')
+                            continue
+                        
+                        output = model(input_ids)
+                        if isinstance(output, tuple):
+                            logits = output[0]
+                        else:
+                            logits = output
+                        
+                        if logits.shape[0] != 1 or logits.shape[1] != input_ids.shape[1]:
+                            perplexity_batch[batch_idx] = float('nan')
+                            continue
+                        
+                        loss = F.cross_entropy(
+                            logits.view(-1, logits.size(-1)),
+                            target_ids.view(-1),
+                            reduction='mean'
+                        )
+                        
+                        perplexity_batch[batch_idx] = math.exp(loss.item())
+                    except Exception as e:
+                        perplexity_batch[batch_idx] = float('nan')
+        except Exception as e:
+            print(f"    ⚠ Batch perplexity failed: {e}")
+            perplexity_batch = [float('nan')] * batch_size
+    
+    # Pre-compute noun carryover for enabled stories
+    noun_carryover_batch = [None] * batch_size
+    noun_carryover_enabled = metrics_config.get("noun_carryover", {}).get("enabled", True) if metrics_config else True
+    if noun_carryover_enabled and _HAS_NOUN_CARRYOVER:
+        try:
+            for batch_idx, (prompt, generated) in enumerate(zip(prompts, generateds)):
+                if prompt:
+                    soft_cfg = noun_carryover_config if noun_carryover_config else SoftConfig()
+                    nc_results = noun_carryover_metrics(prompt, generated, soft_cfg=soft_cfg)
+                    noun_carryover_batch[batch_idx] = nc_results
+        except Exception as e:
+            print(f"    ⚠ Batch noun carryover failed: {e}")
+            noun_carryover_batch = [None] * batch_size
+    
+    # --- PHASE 2B: Sequential processing per story ---
+    
+    # Now process each story individually (but reuse batch computations)
+    progress_iter = tqdm(
+        enumerate(batch_data),
+        total=len(batch_data),
+        desc="    Stories",
+        unit="story",
+        ncols=100,
+        leave=False
+    ) if HAS_TQDM else enumerate(batch_data)
+    
+    for local_idx, (global_idx, prompt, generated, ground_truth) in progress_iter:
+        try:
+            results = {
+                "prompt": prompt,
+                "generated": generated,
+                "ground_truth": ground_truth,
+            }
+            
+            # --- 1. Diversity Metrics (on generated text)
+            try:
+                results["distinct_1"] = distinct_n([generated], n=1)
+                results["distinct_2"] = distinct_n([generated], n=2)
+                results["distinct_3"] = distinct_n([generated], n=3)
+            except Exception as e:
+                results["distinct_1"] = None
+                results["distinct_2"] = None
+                results["distinct_3"] = None
+            
+            # --- 2. Repetition Rate (on generated text)
+            try:
+                results["repetition_rate"] = repetition_rate([generated])
+            except Exception as e:
+                results["repetition_rate"] = None
+            
+            # --- 3. Grammar Score (per-story computation) ---
+            try:
+                results["grammar_score"] = calculate_grammar_score([generated], device=device)
+            except Exception as e:
+                results["grammar_score"] = None
+            
+            # --- 4. Statistics (on full story: prompt + generated)
+            try:
+                full_generated = prompt + generated
+                results["word_count"] = count_words([full_generated])
+                results["sentence_count"] = count_sentences([full_generated])
+            except Exception as e:
+                results["word_count"] = None
+                results["sentence_count"] = None
+            
+            # --- 5. LLM Judge (will be handled in Phase 3 separately) ---
+            results["llm_judge_grammar"] = None
+            results["llm_judge_creativity"] = None
+            results["llm_judge_consistency"] = None
+            results["llm_judge_num_evaluated"] = None
+            results["llm_judge_num_failed"] = None
+            
+            # --- 6. Text Quality (from pre-computed batch) ---
+            if tq_results_batch[local_idx] and isinstance(tq_results_batch[local_idx], dict):
+                try:
+                    tq_results = tq_results_batch[local_idx]
+                    results["text_quality_coherence"] = tq_results.get("coherence")
+                    results["text_quality_cohesion"] = tq_results.get("cohesion_mean")
+                    results["text_quality_score"] = tq_results.get("text_quality")
+                except Exception as e:
+                    print(f"    Debug: text_quality error for story {global_idx + 1}: {e} (type: {type(tq_results_batch[local_idx])})")
+                    results["text_quality_coherence"] = None
+                    results["text_quality_cohesion"] = None
+                    results["text_quality_score"] = None
+            else:
+                results["text_quality_coherence"] = None
+                results["text_quality_cohesion"] = None
+                results["text_quality_score"] = None
+            
+            # --- 7. Noun Carryover (from pre-computed batch) ---
+            if noun_carryover_batch[local_idx] and isinstance(noun_carryover_batch[local_idx], dict):
+                try:
+                    nc_results = noun_carryover_batch[local_idx]
+                    results["noun_carryover_hard_coverage"] = nc_results.get("hard_coverage")
+                    results["noun_carryover_hard_jaccard"] = nc_results.get("hard_jaccard")
+                    results["noun_carryover_hard_precision"] = nc_results.get("hard_precision")
+                    results["noun_carryover_soft_coverage"] = nc_results.get("soft_coverage")
+                    soft_cfg = noun_carryover_config if noun_carryover_config else SoftConfig()
+                    results[f"noun_carryover_soft_coverage@{soft_cfg.threshold:.2f}"] = nc_results.get(
+                        f"soft_coverage@{soft_cfg.threshold:.2f}"
+                    )
+                except Exception as e:
+                    print(f"    Debug: noun_carryover error for story {global_idx + 1}: {e} (type: {type(noun_carryover_batch[local_idx])})")
+                    results["noun_carryover_hard_coverage"] = None
+                    results["noun_carryover_hard_jaccard"] = None
+                    results["noun_carryover_hard_precision"] = None
+                    results["noun_carryover_soft_coverage"] = None
+                    results[f"noun_carryover_soft_coverage@0.70"] = None
+            else:
+                results["noun_carryover_hard_coverage"] = None
+                results["noun_carryover_hard_jaccard"] = None
+                results["noun_carryover_hard_precision"] = None
+                results["noun_carryover_soft_coverage"] = None
+                results[f"noun_carryover_soft_coverage@0.70"] = None
+            
+            # --- 8. N-gram Overlap Metrics (BLEU, ROUGE) ---
+            try:
+                results["bleu"] = calculate_bleu(generated, ground_truth)
+            except Exception as e:
+                results["bleu"] = None
+            
+            try:
+                results["rouge_1"] = calculate_rouge_n(generated, ground_truth, n=1)
+                results["rouge_2"] = calculate_rouge_n(generated, ground_truth, n=2)
+                results["rouge_l"] = calculate_rouge_l(generated, ground_truth)
+            except Exception as e:
+                results["rouge_1"] = None
+                results["rouge_2"] = None
+                results["rouge_l"] = None
+            
+            # --- 9. Perplexity (from pre-computed batch) ---
+            results["perplexity"] = perplexity_batch[local_idx]
+            
+            results_list.append(results)
+        except Exception as e:
+            print(f"    ✗ Story {global_idx + 1}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    return results_list
 
 
 # ============================================================================
@@ -507,7 +836,13 @@ def main():
         "--max_stories",
         type=int,
         default=None,
-        help="Maximum number of stories to evaluate"
+        help="Maximum number of stories to evaluate in all phases"
+    )
+    parser.add_argument(
+        "--llm_max_stories",
+        type=int,
+        default=None,
+        help="Maximum number of stories for LLM Judge Phase 3 sampling"
     )
     parser.add_argument(
         "--output_path",
@@ -534,6 +869,12 @@ def main():
         default=None,
         help="API key for LLM judge (will prompt if not provided and LLM judge is enabled)"
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=None,
+        help="Batch size for story evaluation (default: 16, from config or CLI)"
+    )
     
     args = parser.parse_args()
     
@@ -555,11 +896,13 @@ def main():
     dataset_path = args.dataset_path or config.get("dataset", {}).get("path")
     dataset_name = args.dataset_name or config.get("dataset", {}).get("name", "Dataset")
     max_stories = args.max_stories or config.get("dataset", {}).get("max_stories")
+    llm_max_stories = args.llm_max_stories or config.get("metrics", {}).get("llm_judge", {}).get("max_stories")
     tokenizer_type = args.tokenizer_type or config.get("tokenizer", {}).get("type", "character")
     tokenizer_path = args.tokenizer_path or config.get("tokenizer", {}).get("path")
     device = args.device or config.get("device", {}).get("type", "cpu")
     output_path = args.output_path or config.get("output", {}).get("json_path", "results/model_eval.json")
     wandb_project = args.wandb_project or config.get("output", {}).get("wandb_project", "pocket-narrator-model-eval")
+    wandb_enabled = config.get("output", {}).get("wandb_enabled", True)
     
     # Metrics from config (CLI args take precedence)
     metrics_config = config.get("metrics", {})
@@ -585,6 +928,9 @@ def main():
     
     # Generation parameters
     generation_kwargs = config.get("generation", {})
+    
+    # Batch size configuration
+    batch_size = args.batch_size or config.get("evaluation", {}).get("batch_size", 16)
     
     # --- Prompt for API Key if LLM Judge is Enabled ---
     if metrics_config.get("llm_judge", {}).get("enabled", False) and not llm_judge_api_key:
@@ -674,70 +1020,181 @@ def main():
         if hasattr(noun_carryover_embedder, 'to'):
             noun_carryover_embedder.to(device)
     
-    # --- Evaluate Stories ---
+    # --- Evaluate Stories (with batching) ---
     print(f"\nEvaluating {len(stories)} stories...")
     all_results = []
+    print(f"Batch size: {batch_size}\n")
     
-    for idx, story in enumerate(stories):
-        if idx % max(1, len(stories) // 10) == 0:
-            print(f"  Progress: {idx}/{len(stories)}")
+    for batch_start in range(0, len(stories), batch_size):
+        batch_end = min(batch_start + batch_size, len(stories))
+        batch_stories = stories[batch_start:batch_end]
         
-        # Split story
-        prompt, ground_truth = split_story_at_midpoint(story)
+        # Progress header for this batch
+        print(f"[BATCH {batch_start // batch_size + 1}] Processing stories {batch_start + 1}-{batch_end}/{len(stories)}")
         
-        if not prompt or not ground_truth:
-            print(f"  Skipping story {idx}: empty prompt or ground truth")
-            continue
+        # --- PHASE 1: GENERATE PREDICTIONS ---
+        print(f"  ├─ PHASE 1: Generating predictions...")
+        batch_data = []  # List of (idx, prompt, generated, ground_truth)
+        generated_count = 0
         
-        # Generate
-        try:
-            generated = generate_from_prompt(
-                model,
-                tokenizer,
-                prompt,
-                model_type,
-                generation_kwargs
-            )
-        except Exception as e:
-            print(f"  Error generating for story {idx}: {e}")
-            continue
+        for local_idx, story in enumerate(batch_stories):
+            global_idx = batch_start + local_idx
+            
+            # Split story
+            prompt, ground_truth = split_story_at_midpoint(story)
+            
+            if not prompt or not ground_truth:
+                print(f"  │  ⚠ Story {global_idx + 1}: skipped (empty prompt or ground truth)")
+                continue
+            
+            # Generate
+            try:
+                generated = generate_from_prompt(
+                    model,
+                    tokenizer,
+                    prompt,
+                    model_type,
+                    generation_kwargs
+                )
+                generated_count += 1
+                batch_data.append((global_idx, prompt, generated, ground_truth))
+            except Exception as e:
+                print(f"  │  ✗ Story {global_idx + 1}: generation failed ({e})")
+                continue
         
-        # Determine if this story should be evaluated with LLM judge
-        eval_metrics_config = metrics_config.copy()
-        if llm_judge_enabled and (llm_judge_stories_indices is None or idx not in llm_judge_stories_indices):
-            # Disable LLM judge for this story
-            eval_metrics_config["llm_judge"] = {"enabled": False}
+        print(f"  └─ Generated {generated_count}/{batch_end - batch_start} stories")
         
-        # Evaluate
-        try:
-            result = evaluate_story(
-                prompt=prompt,
-                generated=generated,
-                ground_truth=ground_truth,
-                model=model,
-                tokenizer=tokenizer,
-                model_type=model_type,
-                device=device,
-                metrics_config=eval_metrics_config,
-                text_quality_config=text_quality_config,
-                text_quality_embedder=text_quality_embedder,
-                noun_carryover_config=noun_carryover_config,
-                noun_carryover_embedder=noun_carryover_embedder,
-                llm_judge_api_key=llm_judge_api_key,
-            )
-            result["model"] = model_type
-            result["dataset"] = dataset_name
-            result["story_id"] = idx
-            all_results.append(result)
-        except Exception as e:
-            print(f"  Error evaluating story {idx}: {e}")
-            continue
+        # Batch evaluate with neural models (grammar, text quality, etc.)
+        if batch_data:
+            # --- PHASE 2: NEURAL METRICS (GPU-batched) ---
+            print(f"  └─ PHASE 2: Computing metrics for {len(batch_data)} stories (batched on GPU)...")
+            
+            try:
+                # Process entire batch with GPU optimization
+                batch_results = evaluate_story_batch(
+                    batch_data,
+                    model=model,
+                    tokenizer=tokenizer,
+                    model_type=model_type,
+                    device=device,
+                    metrics_config=metrics_config,
+                    text_quality_config=text_quality_config,
+                    text_quality_embedder=text_quality_embedder,
+                    noun_carryover_config=noun_carryover_config,
+                    noun_carryover_embedder=noun_carryover_embedder,
+                    llm_judge_api_key=llm_judge_api_key,
+                    llm_judge_stories_indices=llm_judge_stories_indices,
+                )
+                
+                # Add metadata and collect results
+                for result, (global_idx, _, _, _) in zip(batch_results, batch_data):
+                    result["model"] = model_type
+                    result["dataset"] = dataset_name
+                    result["story_id"] = global_idx
+                    all_results.append(result)
+                
+                print(f"  │  ✓ Processed {len(batch_results)}/{len(batch_data)} stories")
+            except Exception as e:
+                print(f"  │  ✗ Batch evaluation failed: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            print()  # blank line after batch
     
     if not all_results:
         print("ERROR: No stories were successfully evaluated")
         return
     
-    print(f"\nSuccessfully evaluated {len(all_results)} stories\n")
+    print(f"✅ Successfully evaluated {len(all_results)} stories (Phases 1-3)\n")
+    
+    # --- PHASE 3: LLM Judge Evaluation (optional, expensive API calls) ---
+    llm_judge_enabled = metrics_config.get("llm_judge", {}).get("enabled", False) if metrics_config else False
+    if HAS_WANDB and llm_judge_enabled and llm_judge_stories_indices:
+        print("="*80)
+        print(f"PHASE 3: LLM Judge Evaluation ({len(llm_judge_stories_indices)} sampled stories)")
+        print("="*80 + "\n")
+        
+        try:
+            llm_judge_count = 0
+            for story_idx in llm_judge_stories_indices:
+                # Find result for this story
+                result_idx = next((i for i, r in enumerate(all_results) if r["story_id"] == story_idx), None)
+                if result_idx is None:
+                    continue
+                
+                result = all_results[result_idx]
+                story_num = story_idx + 1
+                
+                try:
+                    print(f"\n  Story {story_num}:")
+                    print(f"  {'─' * 78}")
+                    
+                    # Run LLM Judge
+                    print(f"  🔄 Awaiting LLM Judge response...", end="", flush=True)
+                    llm_results = run_llm_judge_evaluation(
+                        [result["prompt"]], 
+                        [result["generated"]], 
+                        api_key=llm_judge_api_key
+                    )
+                    
+                    if llm_results:
+                        print(" ✓\n")
+                        print(f"  📥 RESPONSE RECEIVED FROM LLM JUDGE:")
+                        print(f"     Grammar Score: {llm_results.get('llm_judge_grammar')}")
+                        print(f"     Creativity Score: {llm_results.get('llm_judge_creativity')}")
+                        print(f"     Consistency Score: {llm_results.get('llm_judge_consistency')}")
+                        print(f"     Evaluated: {llm_results.get('llm_judge_num_evaluated')}")
+                        print(f"     Failed: {llm_results.get('llm_judge_num_failed')}")
+                        
+                        result["llm_judge_grammar"] = llm_results.get("llm_judge_grammar")
+                        result["llm_judge_creativity"] = llm_results.get("llm_judge_creativity")
+                        result["llm_judge_consistency"] = llm_results.get("llm_judge_consistency")
+                        result["llm_judge_num_evaluated"] = llm_results.get("llm_judge_num_evaluated")
+                        result["llm_judge_num_failed"] = llm_results.get("llm_judge_num_failed")
+                        # Only count as successful if LLM judge actually parsed valid scores (not None/N/A)
+                        grammar = llm_results.get("llm_judge_grammar")
+                        creativity = llm_results.get("llm_judge_creativity")
+                        consistency = llm_results.get("llm_judge_consistency")
+                        
+                        # If any score is None, print debug info
+                        if grammar is None or creativity is None or consistency is None:
+                            print(f"\n  ⚠️  PARSING ERROR DETECTED - Some scores are None/N/A")
+                            print(f"  Grammar: {grammar}, Creativity: {creativity}, Consistency: {consistency}")
+                            print(f"\n  🔍 DEBUG INFO:")
+                            prompt_text = LLM_JUDGE_PROMPT_TEMPLATE.format(
+                                story_beginning=result["prompt"],
+                                story_completion=result["generated"]
+                            )
+                            print(f"  📤 FULL PROMPT SENT:")
+                            print(f"  {prompt_text}")
+                            print(f"\n  📥 RAW API RESPONSE:")
+                            if "individual_scores" in llm_results and llm_results.get("individual_scores"):
+                                for idx, score in enumerate(llm_results.get("individual_scores", [])):
+                                    print(f"    Story {idx} raw response:")
+                                    print(f"    {score.raw_response}")
+                            else:
+                                print(f"    No individual scores available")
+                        elif grammar is not None and creativity is not None and consistency is not None:
+                            llm_judge_count += 1
+                    else:
+                        print(" ⚠\n")
+                        print(f"  ⚠️  NO RESPONSE RECEIVED FROM LLM JUDGE")
+                except Exception as e:
+                    print(f" ✗\n")
+                    print(f"  ❌ ERROR: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+            
+            print(f"\n{'═' * 80}")
+            print(f"✅ LLM Judge evaluation complete ({llm_judge_count}/{len(llm_judge_stories_indices)} successful)\n")
+        except Exception as e:
+            print(f"\n⚠ LLM Judge phase encountered an error: {e}")
+            print("Continuing with W&B logging (LLM judge results will be skipped)...\n")
+            import traceback
+            traceback.print_exc()
+    elif llm_judge_enabled:
+        print("\nℹ LLM Judge enabled but no stories sampled (check sample_size in config)\n")
     
     # --- Calculate Summary Statistics ---
     print("="*80)
@@ -792,89 +1249,103 @@ def main():
     print(f"Saved results to {output_path}")
     
     # --- Log to W&B ---
-    if HAS_WANDB:
+    if HAS_WANDB and wandb_enabled:
         print("\nLogging to W&B...")
-        wandb.init(
-            project=wandb_project,
-            name=f"model-eval_{Path(model_path).stem}_{dataset_name}",
-            config={
-                "model_path": str(model_path),
-                "model_type": model_type,
-                "tokenizer_type": tokenizer_type,
-                "tokenizer_path": tokenizer_path or "default",
-                "dataset_path": str(dataset_path),
-                "dataset_name": dataset_name,
-                "max_stories_evaluated": len(all_results),
-            }
-        )
-        
-        # Create results table
-        table_data = []
-        for result in all_results:
-            row = [
-                result["story_id"],
-                model_type,
-                dataset_name,
-                result["prompt"],
-                result["generated"],
-                result["ground_truth"],
-            ]
+        try:
+            # Initialize W&B run
+            wandb.init(
+                project=wandb_project,
+                name=f"model-eval_{Path(model_path).stem}_{dataset_name}",
+                config={
+                    "model_path": str(model_path),
+                    "model_type": model_type,
+                    "tokenizer_type": tokenizer_type,
+                    "tokenizer_path": tokenizer_path or "default",
+                    "dataset_path": str(dataset_path),
+                    "dataset_name": dataset_name,
+                    "max_stories_evaluated": len(all_results),
+                }
+            )
             
-            # Add metric values
-            for metric in metric_keys:
-                val = result.get(metric)
-                row.append(f"{val:.4f}" if val is not None and isinstance(val, float) else val)
+            print("✓ W&B initialized")
             
-            table_data.append(row)
-        
-        table = wandb.Table(
-            columns=["story_id", "model", "dataset", "prompt", "generated", "ground_truth"] + metric_keys,
-            data=table_data
-        )
-        
-        wandb.log({
-            f"{dataset_name}_results_table": table
-        })
-        
-        # Log summary metrics
-        summary_logs = {"total_stories_evaluated": len(all_results)}
-        for metric, stats in summary.items():
-            summary_logs[f"{metric}/mean"] = stats["mean"]
-            summary_logs[f"{metric}/min"] = stats["min"]
-            summary_logs[f"{metric}/max"] = stats["max"]
-            summary_logs[f"{metric}/count"] = stats["count"]
-        
-        wandb.log(summary_logs)
-        
-        # Log JSON artifact
-        with open("/tmp/evaluation_results.json", 'w') as f:
-            json.dump(json_output, f, indent=2)
-        
-        # Sanitize artifact name (no spaces, parentheses, etc.)
-        artifact_name = f"model_eval_{model_type}_{dataset_name}".replace(" ", "_").replace("(", "").replace(")", "")
-        artifact = wandb.Artifact(
-            name=artifact_name,
-            type="evaluation_results"
-        )
-        artifact.add_file("/tmp/evaluation_results.json", name="evaluation_results.json")
-        wandb.log_artifact(artifact)
-        
-        # Log plots by metric category
-        category_metrics = {
-            "diversity": ["distinct_1", "distinct_2", "distinct_3"],
-            "quality": ["grammar_score", "text_quality_score"],
-            "overlap": ["bleu", "rouge_1", "rouge_2", "rouge_l"],
-            "coherence": ["text_quality_coherence", "text_quality_cohesion"],
-            "noun_carryover": ["noun_carryover_hard_coverage", "noun_carryover_hard_jaccard"],
-        }
-        
-        for category, metrics in category_metrics.items():
-            category_data = {m: summary[m]["mean"] for m in metrics if m in summary}
-            if category_data:
-                wandb.log(category_data)
-        
-        wandb.finish()
-        print("Logged results to W&B")
+            # Create results table with per-story details
+            print(f"📊 Creating results table with {len(all_results)} stories...")
+            table_data = []
+            for result in all_results:
+                row = [
+                    result["story_id"],
+                    model_type,
+                    dataset_name,
+                    result.get("prompt", ""),
+                    result.get("generated", ""),
+                    result.get("ground_truth", ""),
+                ]
+                
+                # Add metric values
+                for metric in metric_keys:
+                    val = result.get(metric)
+                    if val is not None:
+                        if isinstance(val, float):
+                            row.append(f"{val:.4f}")
+                        else:
+                            row.append(str(val))
+                    else:
+                        row.append("N/A")
+                
+                table_data.append(row)
+            
+            table = wandb.Table(
+                columns=["story_id", "model", "dataset", "prompt", "generated", "ground_truth"] + metric_keys,
+                data=table_data
+            )
+            
+            # Log the table
+            wandb.log({
+                "results_table": table
+            })
+            print(f"✓ Results table logged with {len(table_data)} rows")
+            
+            # Log summary metrics
+            print("📈 Logging summary metrics...")
+            summary_logs = {"total_stories_evaluated": len(all_results)}
+            for metric, stats in summary.items():
+                summary_logs[f"{metric}/mean"] = stats["mean"]
+                summary_logs[f"{metric}/min"] = stats["min"]
+                summary_logs[f"{metric}/max"] = stats["max"]
+                summary_logs[f"{metric}/count"] = stats["count"]
+            
+            wandb.log(summary_logs)
+            print(f"✓ Summary metrics logged ({len(summary_logs)} metrics)")
+            
+            # Log JSON artifact
+            print("📁 Creating JSON artifact...")
+            artifact_dir = Path("/tmp/wandb_artifacts")
+            artifact_dir.mkdir(exist_ok=True)
+            artifact_path = artifact_dir / "evaluation_results.json"
+            with open(artifact_path, 'w') as f:
+                json.dump(json_output, f, indent=2)
+            
+            # Sanitize artifact name (no spaces, parentheses, etc.)
+            artifact_name = f"model_eval_{model_type}_{dataset_name}".replace(" ", "_").replace("(", "").replace(")", "")
+            artifact = wandb.Artifact(artifact_name, type="evaluation_results")
+            artifact.add_file(str(artifact_path))
+            wandb.log_artifact(artifact)
+            print(f"✓ JSON artifact logged: {artifact_name}")
+            
+            # Finish the run
+            wandb.finish()
+            print("✓ W&B run completed and uploaded")
+            
+        except Exception as e:
+            print(f"✗ Error logging to W&B: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        if not HAS_WANDB:
+            print("\nSkipping W&B logging: wandb not installed")
+        elif not wandb_enabled:
+            print("\nSkipping W&B logging: wandb_enabled=False in config")
     
     print("\n" + "="*80)
     print("Evaluation complete!")

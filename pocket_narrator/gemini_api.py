@@ -10,19 +10,20 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-DEFAULT_MODEL = "gemini-2.5-flash-lite-preview-09-2025"
+# DEFAULT_MODEL = "gemini-2.5-flash-lite-preview-09-2025"
 # DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 @dataclass
 class LLMJudgeScores:
     """
     Structured output from LLM-as-a-judge evaluation
-    Based on TinyStories paper evaluation criteria (page 5) but with scales adjusted to 1-3
+    Based on TinyStories paper evaluation criteria (page 5) but with scales adjusted to 1-5
     """
-    grammar: float  # 1-3 scale
-    creativity: float  # 1-3 scale
-    consistency: float  # 1-3 scale
+    grammar: float  # 1-5 scale
+    creativity: float  # 1-5 scale
+    consistency: float  # 1-5 scale
     age_group: str  # A: 3 or under, B: 4-5, C: 6-7, D: 8-9, E:10-12, F: 13-16
     raw_response: str
 
@@ -139,28 +140,28 @@ def parse_llm_judge_response(response: str) -> LLMJudgeScores:
     grammar_match = re.search(r"<\s*grammar\s*>\s*(\d+(?:\.\d+)?)\s*<\s*/\s*grammar\s*>", response, re.IGNORECASE | re.DOTALL)
     if grammar_match:
         grammar = float(grammar_match.group(1))
-        if grammar > 3:
-            grammar = 3.0
+        if grammar > 5:
+            grammar = 5.0
     
     creativity_match = re.search(r"<\s*creativity\s*>\s*(\d+(?:\.\d+)?)\s*<\s*/\s*creativity\s*>", response, re.IGNORECASE | re.DOTALL)
     if creativity_match:
         creativity = float(creativity_match.group(1))
-        if creativity > 3:
-            creativity = 3.0
+        if creativity > 5:
+            creativity = 5.0
     
     consistency_match = re.search(r"<\s*consistency\s*>\s*(\d+(?:\.\d+)?)\s*<\s*/\s*consistency\s*>", response, re.IGNORECASE | re.DOTALL)
     if consistency_match:
         consistency = float(consistency_match.group(1))
-        if consistency > 3:
-            consistency = 3.0
+        if consistency > 5:
+            consistency = 5.0
     
     age_match = re.search(r"<\s*age_group\s*>\s*([A-Fa-f])\s*<\s*/\s*age_group\s*>", response, re.IGNORECASE | re.DOTALL)
     if age_match:
         age_group = age_match.group(1).strip().upper()
     
-    # Log success or failure
+    # Mark as error if any metric failed to parse (remains 0.0)
     if grammar == 0.0 or creativity == 0.0 or consistency == 0.0:
-        print(f"DEBUG: Parsing response (partial): {response[:150]}")
+        age_group = "error"  # Mark as failed evaluation
     
     return LLMJudgeScores(
         grammar=grammar,
@@ -204,7 +205,9 @@ def evaluate_story_with_llm(
     
     # Retry on empty responses
     for attempt in range(max_retries):
-        response = client.generate(prompt, temperature=0.3)
+        # Increase max_tokens to ensure XML scores aren't truncated
+        # The prompt + narrative assessment needs sufficient tokens
+        response = client.generate(prompt, temperature=0.3, max_tokens=2048)
         
         # Check if response is empty
         if response and response.strip():
@@ -274,9 +277,9 @@ def evaluate_stories_batch(
 
 DEFAULT_EVALUATION_PROMPT = """You are an expert evaluator of student story completions. Evaluate the student's completion based on:
 
-1. Grammar (score 1-3): Is the completion grammatically correct?
-2. Creativity (score 1-3): Is it creative and imaginative?
-3. Consistency (score 1-3): Does it logically fit with the story beginning?
+1. Grammar (score 1-5): Is the completion grammatically correct? (1=many errors, 5=flawless)
+2. Creativity (score 1-5): Is it creative and imaginative? (1=generic/dull, 5=highly creative)
+3. Consistency (score 1-5): Does it logically fit with the story beginning? (1=disconnected, 5=seamless)
 4. Age Group (letter A-F): What age group is this appropriate for?
    A: 3 or under, B: 4-5, C: 6-7, D: 8-9, E: 10-12, F: 13-16
 
@@ -291,10 +294,10 @@ Student's Completion (what the student wrote):
 </story_completion>
 
 Output your evaluation in exactly this XML format, with no additional text before or after:
-<grammar>1</grammar>
-<creativity>1</creativity>
-<consistency>1</consistency>
-<age_group>A</age_group>
+<grammar>3</grammar>
+<creativity>3</creativity>
+<consistency>3</consistency>
+<age_group>C</age_group>
 
-Replace the example values with your actual scores. Scores must be 1, 2, or 3. Age group must be A, B, C, D, E, or F.
+Replace the example values with your actual scores. Scores must be 1, 2, 3, 4, or 5. Age group must be A, B, C, D, E, or F.
 """

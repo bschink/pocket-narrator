@@ -830,41 +830,28 @@ class LLMJudgeResult:
 
 # Placeholder prompt template - customize this based on TinyStories paper (page 5)
 LLM_JUDGE_PROMPT_TEMPLATE = """
-You are an expert evaluator of children's stories. 
-In the following exercise, the student is given a beginning of a story. The student needs to complete it into a full story.
-The exercise tests the student's language abilities and creativity. 
-The beginning of the story is wrapped in <story_beginning> and the student's completion is wrapped in <story_completion>.
+You are an expert evaluator of children's stories. Evaluate the student's story completion and respond ONLY with XML scores in this exact format:
 
-First provide your general assessment about the part written by the student (<story_completion>).
-Is it gramatically correct? Is it consistent with the beginning of the story? Pay special attention to whether the
-student manages to complete the sentence which began in <story_beginning> but wasn't finished if that's the case.
+<grammar><score 1-5></grammar>
+<creativity><score 1-5></creativity>
+<consistency><score 1-5></consistency>
+<age_group><single letter A-F></age_group>
 
-Afterwards, grade the student’s completion in terms of grammar, creativity, consistency with the story’s beginning and
-whether the plot makes sense. Moreover, please provide your best guess of what the age of the student might be,
-as reflected from the completion. Choose from possible age groups: A: 3 or under. B: 4-5. C: 6-7. D: 8-9. E:
-10-12. F: 13-16. Please evaluate the model's completion based on these criteria, providing a score from 1-3 for each:
+Where:
+1. Grammar (1-5): Is the completion grammatically correct? (1=many errors, 5=flawless)
+2. Creativity (1-5): Is it creative and imaginative? (1=generic/dull, 5=highly creative)
+3. Consistency (1-5): Does it logically fit with the story beginning? (1=disconnected, 5=seamless)
+4. Age group (A-F): What age group is this appropriate for? (A: 3 or under, B: 4-5, C: 6-7, D: 8-9, E: 10-12, F: 13-16)
 
-1. Grammar: How grammatically correct is the completion?
-2. Creativity: How creative and imaginative is the completion?
-3. Consistency: How logically consistent is the completion with the beginning?
-4. Age group: What age group is this story appropriate for?
-   (A: 3 or under, B: 4-5, C: 6-7, D: 8-9, E: 10-12, F: 13-16)
-
-Story beginning (given in the exercise):
+Story beginning:
 <story_beginning>
 {story_beginning}
 </story_beginning>
 
-Students completion:
+Student's completion:
 <story_completion>
 {story_completion}
 </story_completion>
-
-Please frame your evaluation in exactly this format:
-<grammar><score 1-3></grammar>
-<creativity><score 1-3></creativity>
-<consistency><score 1-3></consistency>
-<age_group><single letter A-F></age_group>
 """
 
 
@@ -1018,4 +1005,5 @@ def run_llm_judge_evaluation(
         "llm_judge_age_groups": result.age_group_distribution,
         "llm_judge_num_evaluated": result.num_evaluated,
         "llm_judge_num_failed": result.num_failed,
+        "individual_scores": result.individual_scores,
     }

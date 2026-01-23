@@ -34,6 +34,14 @@ device:
   type: "mps"
 
 # ============================================================================
+# EVALUATION CONFIGURATION
+# ============================================================================
+evaluation:
+  # Batch size for story evaluation (higher = better GPU utilization, more memory)
+  # Recommended: 16 for most GPUs, 8 for limited VRAM, 32+ for high-end GPUs
+  batch_size: 16
+
+# ============================================================================
 # OPTIONAL METRICS CONFIGURATION
 # ============================================================================
 metrics:
@@ -50,11 +58,11 @@ metrics:
   # LLM-as-a-judge evaluation (grammar, creativity, consistency)
   # Requires: Google Generative AI API key
   llm_judge:
-    enabled: false
+    enabled: true
     # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
     api_key: null
     # Random sampling for LLM judge (expensive API calls)
-    sample_size: 1000      # number of stories to sample (None = all)
+    sample_size: 15      # number of stories to sample (None = all)
     random_seed: 42        # seed for reproducibility
 
 # ============================================================================
