@@ -468,7 +468,9 @@ def evaluate_story_batch(
                     )
                     noun_carryover_batch[batch_idx] = nc_results
         except Exception as e:
+            import traceback
             print(f"    ⚠ Batch noun carryover failed: {e}")
+            traceback.print_exc()
             noun_carryover_batch = [None] * batch_size
     
     # --- PHASE 2B: Sequential processing per story ---
