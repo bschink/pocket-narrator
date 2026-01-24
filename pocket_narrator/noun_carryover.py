@@ -250,9 +250,20 @@ def noun_carryover_metrics(
     *,
     spacy_model: str = "en_core_web_sm",
     soft_cfg: SoftConfig = SoftConfig(),
+    embedder: Optional[SoftEmbedder] = None,
 ) -> Dict[str, Optional[float]]:
     """
     Convenience function to compute all metrics from raw strings.
+    
+    Args:
+        prompt: Story beginning/prompt
+        story: Generated story completion
+        spacy_model: spaCy model for noun extraction
+        soft_cfg: Configuration for soft metrics (threshold, model name)
+        embedder: Optional pre-initialized SoftEmbedder. If None, creates a new one.
+    
+    Returns:
+        Dictionary with hard and soft metrics
     """
     p_nouns = extract_nouns(prompt, spacy_model=spacy_model)
     s_nouns = extract_nouns(story, spacy_model=spacy_model)
@@ -263,7 +274,12 @@ def noun_carryover_metrics(
         "hard_precision": hard_precision(p_nouns, s_nouns),
     }
 
-    emb = SoftEmbedder(soft_cfg)
+    # Use provided embedder or create a new one
+    if embedder is None:
+        emb = SoftEmbedder(soft_cfg)
+    else:
+        emb = embedder
+    
     out["soft_coverage"] = soft_coverage(p_nouns, s_nouns, emb)
     out[f"soft_coverage@{soft_cfg.threshold:.2f}"] = soft_coverage_at(
         p_nouns, s_nouns, emb, threshold=soft_cfg.threshold

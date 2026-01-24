@@ -62,7 +62,7 @@ if _HAS_TEXT_QUALITY:
     from pocket_narrator.text_quality import TextQualityConfig, evaluate_text_quality, _Embedder
 
 if _HAS_NOUN_CARRYOVER:
-    from pocket_narrator.noun_carryover import noun_carryover_metrics, SoftConfig
+    from pocket_narrator.noun_carryover import noun_carryover_metrics, SoftConfig, SoftEmbedder
 
 
 # ============================================================================
@@ -153,8 +153,8 @@ def evaluate_story_batch(
     tq_results_batch = [None] * batch_size
     if _HAS_TEXT_QUALITY and metrics_config.get("text_quality", {}).get("enabled", True):
         try:
-            tq_results_batch = []
-            for completion in completions:
+            # Use indexed assignment to preserve batch alignment
+            for batch_idx, completion in enumerate(completions):
                 try:
                     tq_results = evaluate_text_quality(
                         completion,
@@ -162,11 +162,11 @@ def evaluate_story_batch(
                         embedder=text_quality_embedder
                     )
                     if isinstance(tq_results, dict):
-                        tq_results_batch.append(tq_results)
+                        tq_results_batch[batch_idx] = tq_results
                     else:
-                        tq_results_batch.append(None)
+                        tq_results_batch[batch_idx] = None
                 except Exception as e:
-                    tq_results_batch.append(None)
+                    tq_results_batch[batch_idx] = None
         except Exception as e:
             print(f"    ⚠ Batch text quality failed: {e}")
             tq_results_batch = [None] * batch_size
@@ -174,12 +174,20 @@ def evaluate_story_batch(
     # --- Pre-compute noun carryover for all stories ---
     noun_carryover_batch = [None] * batch_size
     noun_carryover_enabled = metrics_config.get("noun_carryover", {}).get("enabled", True) if metrics_config else True
+    noun_carryover_embedder = None
     if noun_carryover_enabled and _HAS_NOUN_CARRYOVER:
+        # Initialize embedder once for efficiency
+        noun_carryover_embedder = SoftEmbedder("all-MiniLM-L6-v2")
         try:
             for batch_idx, (prompt, completion) in enumerate(zip(prompts, completions)):
                 if prompt:
-                    soft_cfg = noun_carryover_config if noun_carryover_config else SoftConfig()
-                    nc_results = noun_carryover_metrics(prompt, completion, soft_cfg=soft_cfg)
+                    soft_cfg = SoftConfig()
+                    nc_results = noun_carryover_metrics(
+                        prompt, 
+                        completion, 
+                        soft_cfg=soft_cfg,
+                        embedder=noun_carryover_embedder
+                    )
                     noun_carryover_batch[batch_idx] = nc_results
         except Exception as e:
             print(f"    ⚠ Batch noun carryover failed: {e}")
@@ -576,15 +584,21 @@ def main():
                         result["llm_judge_consistency"] = llm_results.get("llm_judge_consistency")
                         result["llm_judge_num_evaluated"] = llm_results.get("llm_judge_num_evaluated")
                         result["llm_judge_num_failed"] = llm_results.get("llm_judge_num_failed")
-                        # Only count as successful if LLM judge actually parsed valid scores (not None/N/A)
+                        # Only count as successful if LLM judge successfully evaluated (not failed)
                         grammar = llm_results.get("llm_judge_grammar")
                         creativity = llm_results.get("llm_judge_creativity")
                         consistency = llm_results.get("llm_judge_consistency")
+                        num_evaluated = llm_results.get("llm_judge_num_evaluated", 0)
+                        num_failed = llm_results.get("llm_judge_num_failed", 1)
                         
-                        # If any score is None, print debug info
-                        if grammar is None or creativity is None or consistency is None:
-                            print(f"\n  ⚠️  PARSING ERROR DETECTED - Some scores are None/N/A")
+                        # Check if evaluation was successful (num_evaluated > 0 and num_failed == 0)
+                        if num_evaluated > 0 and num_failed == 0:
+                            llm_judge_count += 1
+                        else:
+                            # Failed evaluation - print debug info
+                            print(f"\n  ⚠️  EVALUATION FAILED")
                             print(f"  Grammar: {grammar}, Creativity: {creativity}, Consistency: {consistency}")
+                            print(f"  Evaluated: {num_evaluated}, Failed: {num_failed}")
                             print(f"\n  🔍 DEBUG INFO:")
                             prompt_text = LLM_JUDGE_PROMPT_TEMPLATE.format(
                                 story_beginning=result["prompt"],
@@ -599,8 +613,6 @@ def main():
                                     print(f"    {score.raw_response}")
                             else:
                                 print(f"    No individual scores available")
-                        elif grammar is not None and creativity is not None and consistency is not None:
-                            llm_judge_count += 1
                     else:
                         print(" ⚠\n")
                         print(f"  ⚠️  NO RESPONSE RECEIVED FROM LLM JUDGE")
