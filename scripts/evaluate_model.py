@@ -455,7 +455,7 @@ def evaluate_story_batch(
     noun_carryover_embedder = None
     if noun_carryover_enabled and _HAS_NOUN_CARRYOVER:
         # Initialize embedder once for efficiency
-        noun_carryover_embedder = SoftEmbedder("all-MiniLM-L6-v2")
+        noun_carryover_embedder = SoftEmbedder(SoftConfig(model_name="all-MiniLM-L6-v2"))
         try:
             for batch_idx, (prompt, generated) in enumerate(zip(prompts, generateds)):
                 if prompt:
@@ -1023,7 +1023,7 @@ def main():
     noun_carryover_embedder = None
     if _HAS_NOUN_CARRYOVER and metrics_config.get("noun_carryover", {}).get("enabled", True):
         noun_carryover_config = SoftConfig()
-        noun_carryover_embedder = SoftEmbedder("all-MiniLM-L6-v2")
+        noun_carryover_embedder = SoftEmbedder(SoftConfig(model_name="all-MiniLM-L6-v2"))
         # Move embedder to GPU for faster computation
         if hasattr(noun_carryover_embedder, 'to'):
             noun_carryover_embedder.to(device)

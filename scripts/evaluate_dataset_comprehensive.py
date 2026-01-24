@@ -177,7 +177,7 @@ def evaluate_story_batch(
     noun_carryover_embedder = None
     if noun_carryover_enabled and _HAS_NOUN_CARRYOVER:
         # Initialize embedder once for efficiency
-        noun_carryover_embedder = SoftEmbedder("all-MiniLM-L6-v2")
+        noun_carryover_embedder = SoftEmbedder(SoftConfig(model_name="all-MiniLM-L6-v2"))
         try:
             for batch_idx, (prompt, completion) in enumerate(zip(prompts, completions)):
                 if prompt:
