@@ -1,0 +1,170 @@
+# ============================================================================
+# Model Evaluation Configuration
+# ============================================================================
+# Comprehensive evaluation of a trained language model on a dataset
+# 
+# Usage:
+#   python scripts/evaluate_model.py \
+#     --config configs/evaluation/evaluate_model_first.yaml
+#
+# Or use command line to override:
+#   python scripts/evaluate_model.py \
+#     --config configs/evaluation/evaluate_model_first.yaml \
+#     --model_path models/transformer/different_model.pth \
+#     --max_stories 100 \
+#     --device mps
+
+# ============================================================================
+# MODEL CONFIGURATION
+# ============================================================================
+model:
+  # Path to trained model
+  path: "models/transformer_28M_wide.model"
+  
+  # Type of model: ngram, transformer, or mamba
+  type: "transformer"
+
+# ============================================================================
+# DATASET CONFIGURATION
+# ============================================================================
+dataset:
+  # Path to dataset file (one story per line)
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.eighth.txt"
+  
+  # Display name for W&B logging
+  name: "D: 28M wide transformer model eval"
+  
+  # Maximum number of stories to evaluate (null = all)
+  max_stories: null
+
+# ============================================================================
+# TOKENIZER CONFIGURATION
+# ============================================================================
+tokenizer:
+  # Type of tokenizer: character or bpe
+  type: "bpe"
+  
+  # Path to tokenizer (null = default path based on type)
+  path: "tokenizers/bpe_tokenizer_5k_eigth_50_rounds"
+
+# ============================================================================
+# DEVICE CONFIGURATION
+# ============================================================================
+device:
+  # Device for models: "cpu", "cuda", "mps" (Mac GPU)
+  type: "cuda"
+
+# ============================================================================
+# GENERATION CONFIGURATION
+# ============================================================================
+generation:
+  # Generation strategy: greedy or sample
+  strategy: "sample"
+  
+  # Maximum tokens to generate per prompt
+  max_length: 5000
+  
+  # Temperature for sampling (transformer only, 0-2.0)
+  temperature: 0.9
+  
+  # Top-k sampling (transformer only, 0 = disabled)
+  top_k: null
+  
+  # Top-p nucleus sampling (transformer only, 0-1.0)
+  top_p: null
+  
+  # Avoid repeating n-grams (ngram only)
+  no_repeat_ngram_size: 3
+
+# ============================================================================
+# OPTIONAL METRICS CONFIGURATION
+# ============================================================================
+metrics:
+  # Text quality evaluation (coherence, cohesion)
+  # Requires: sentence-transformers
+  text_quality:
+    enabled: true
+  
+  # Noun carryover evaluation (hard & soft coverage)
+  # Requires: spacy + sentence-transformers
+  noun_carryover:
+    enabled: true
+  
+  # LLM-as-a-judge evaluation (grammar, creativity, consistency)
+  # Requires: Google Generative AI API key
+  llm_judge:
+    enabled: true
+    # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
+    api_key: null
+    # Random sampling for LLM judge (expensive API calls)
+    sample_size: 1000      # number of stories to sample (None = all)
+    random_seed: 42        # seed for reproducibility
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+output:
+  # Save results to JSON file (null = no JSON export)
+  json_path: "results/model_eval_D_transformer_28M_wide.json"
+  
+  # W&B logging enabled (requires wandb install + wandb login)
+  wandb_enabled: true
+  
+  # W&B project name
+  wandb_project: "pocket-narrator-eval"
+
+# ============================================================================
+# STORY SPLITTING CONFIGURATION
+# ============================================================================
+splitting:
+  # Method: "midpoint" (50/50 split, matches training script prepare_batch)
+  # This is the only method - uses same split as scripts/train.py
+  method: "midpoint"
+  description: "Splits at midpoint (50%) matching training's prepare_batch()"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# EVALUATION PROCESS:
+#   1. Load trained model and tokenizer
+#   2. Load dataset and split each story at midpoint
+#   3. First 50%: prompt (fed to model for generation)
+#   4. Second 50%: ground truth (used for BLEU, ROUGE, perplexity)
+#   5. Generate predictions from prompts
+#   6. Evaluate predictions with all metrics
+#   7. Log results to W&B and JSON
+#
+# EVALUATION METRICS (10 total):
+#   - Diversity: distinct_1, distinct_2, distinct_3 (on generated text)
+#   - Quality: grammar_score, llm_judge_grammar/creativity/consistency (on generated)
+#   - Quality: text_quality (coherence + cohesion on generated)
+#   - Quality: noun_carryover (hard & soft coverage on generated)
+#   - Statistics: word_count, sentence_count (on generated)
+#   - Overlap: BLEU (generated vs ground truth)
+#   - Overlap: ROUGE-1, ROUGE-2, ROUGE-L (generated vs ground truth)
+#   - Language modeling: perplexity (model's likelihood of ground truth)
+#   - Fluency: repetition_rate (on generated)
+#
+# REQUIRED DEPENDENCIES:
+#   - torch, transformers (for grammar score + model loading)
+#   - spacy + en_core_web_sm (for noun extraction)
+#   - sentence-transformers (for text quality + noun carryover)
+#   - google-generativeai (for LLM judge, optional)
+#   - wandb (for W&B logging, optional)
+#
+# W&B LOGGING:
+#   - Results table with all metrics per story
+#   - Summary statistics (mean, min, max, count per metric)
+#   - Category plots (diversity, quality, overlap, coherence, noun_carryover)
+#   - JSON artifact with full evaluation results for download
+#   - Model, tokenizer, dataset metadata in config
+#
+# FIRST RUN:
+#   - Start with max_stories: 10 to test setup
+#   - Check console output for any missing dependencies
+#   - Once working, increase max_stories gradually
+#   - Full evaluation of 30K+ stories takes 2-6 hours (depending on metrics)
+#
+# ============================================================================
+
