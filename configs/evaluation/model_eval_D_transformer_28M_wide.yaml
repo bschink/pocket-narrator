@@ -29,7 +29,7 @@ model:
 # ============================================================================
 dataset:
   # Path to dataset file (one story per line)
-  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.eighth.txt"
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-valid.clean.txt"
   
   # Display name for W&B logging
   name: "D: 28M wide transformer model eval"
