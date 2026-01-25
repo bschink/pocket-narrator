@@ -645,7 +645,7 @@ def main():
     
     summary = {}
     for metric in metric_keys:
-        values = [r[metric] for r in all_results if r[metric] is not None]
+        values = [r[metric] for r in all_results if r[metric] is not None and not (isinstance(r[metric], float) and math.isnan(r[metric]))]
         if values:
             summary[metric] = {
                 "mean": sum(values) / len(values),
