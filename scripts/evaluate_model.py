@@ -154,13 +154,13 @@ def generate_from_prompt(
     predict_kwargs = {
         "strategy": generation_kwargs.get("strategy", "greedy"),
         "max_length": generation_kwargs.get("max_length", 200),
-        "use_cache": generation_kwargs.get("use_cache", True),  # Enable KV caching by default for efficiency
     }
     
     if model_type == "ngram":
         if "no_repeat_ngram_size" in generation_kwargs:
             predict_kwargs["no_repeat_ngram_size"] = generation_kwargs["no_repeat_ngram_size"]
     elif model_type == "transformer":
+        predict_kwargs["use_cache"] = generation_kwargs.get("use_cache", True)  # Enable KV caching by default for efficiency
         predict_kwargs["temperature"] = generation_kwargs.get("temperature", 1.0)
         if "top_k" in generation_kwargs:
             predict_kwargs["top_k"] = generation_kwargs["top_k"]

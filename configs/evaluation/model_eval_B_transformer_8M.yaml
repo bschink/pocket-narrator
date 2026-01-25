@@ -32,10 +32,10 @@ dataset:
   path: "data/processed/TinyStories/TinyStoriesV2-GPT4-valid.clean.txt"
   
   # Display name for W&B logging
-  name: "B: 8M transformer model eval"
+  name: "B_8M transformer model eval"
   
   # Maximum number of stories to evaluate (null = all)
-  max_stories: null
+  max_stories: 3035
 
 # ============================================================================
 # TOKENIZER CONFIGURATION
@@ -52,7 +52,7 @@ tokenizer:
 # ============================================================================
 device:
   # Device for models: "cpu", "cuda", "mps" (Mac GPU)
-  type: "cuda"
+  type: "mps"
 
 # ============================================================================
 # EVALUATION CONFIGURATION
@@ -60,7 +60,7 @@ device:
 evaluation:
   # Batch size for story evaluation (higher = better GPU utilization, more memory)
   # Recommended: 16 for most GPUs, 8 for limited VRAM, 32+ for high-end GPUs
-  batch_size: 16
+  batch_size: 128
 
 # ============================================================================
 # GENERATION CONFIGURATION
@@ -105,7 +105,7 @@ metrics:
     # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
     api_key: null
     # Random sampling for LLM judge (expensive API calls)
-    sample_size: 15      # number of stories to sample (None = all)
+    sample_size: 500      # number of stories to sample (None = all)
     random_seed: 42        # seed for reproducibility
 
 # ============================================================================
