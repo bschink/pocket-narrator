@@ -18,7 +18,6 @@ def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageMod
     Supported model types:
       - "ngram"
       - "transformer"
-      - "hf_tinystories"
     """
     print(f"INFO: Getting model of type '{model_type}'...")
 
@@ -31,15 +30,6 @@ def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageMod
     elif model_type == "transformer":
         from .transformers.model import TransformerModel
         return TransformerModel.from_config(vocab_size=vocab_size, **kwargs)
-    elif model_type == "hf_tinystories":
-        from .hf_tinystories import HuggingFaceTinyStoriesLM
-        
-        hf_model_name = kwargs.get("hf_model_name", "roneneldan/TinyStories-28M")
-        
-        return HuggingFaceTinyStoriesLM(
-            model_name=hf_model_name,
-            device=kwargs.get("device", None)
-        )
     else:
         raise ValueError(f"Unknown model type: '{model_type}'")
     

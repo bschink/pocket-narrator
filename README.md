@@ -1,13 +1,14 @@
-# PocketNarrator: Generating Children Stories Efficiently
+# PocketNarrator: Efficient Story Generation with Small Language Models
 
-**Status:** In Progress 🚧
+**Status:** Active Development 🚀
 
-PocketNarrator is a project for the "Efficient Methods in Machine Learning" course (Master Project, WS25/26) at the University of Hamburg.
+PocketNarrator is a research project for the "Efficient Methods in Machine Learning" course (Master Project, WS25/26) at the University of Hamburg. It focuses on building and evaluating small language models for narrative generation using the [TinyStories dataset](https://huggingface.co/datasets/roneneldan/TinyStories).
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
+- [Supported Models](#supported-models)
 - [Directory Structure](#directory-structure)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -16,75 +17,114 @@ PocketNarrator is a project for the "Efficient Methods in Machine Learning" cour
   - [3. Install Python Dependencies](#3-install-python-dependencies)
 - [Usage](#usage)
   - [Training](#training)
+  - [Evaluation](#evaluation)
   - [Generation](#generation)
+- [Project Structure](#project-structure)
 - [Team](#team)
 
 ## Overview
 
-This project is a systematic investigation into the architecture and components of small language models for efficient narrative generation. Our primary goal is to develop a deep understanding of the trade-offs between different architectural choices in terms of performance, computational efficiency and output quality, rather than simply building a model that can generate stories.
+PocketNarrator is a systematic investigation into the architecture and components of small language models for efficient narrative generation. Our goal is to understand trade-offs between different architectural choices in terms of performance, computational efficiency, and output quality.
 
-To achieve this, we will implement language models from scratch using PyTorch. The project will be centered around the [TinyStories dataset](https://huggingface.co/datasets/roneneldan/TinyStories), a clean, restricted-domain dataset ideal for training capable small models without requiring massive computational resources. One thing to note: This dataset contains a collection of short children stories which we will make use of to build a simple language model with the goal of completing sentences (next token prediction). Firstly, we aim to replicate and optimise the paper corresponding to the dataset [TinyStories: How Small Can Language Models Be and Still Speak Coherent English?](https://arxiv.org/abs/2305.07759) (Eldan, et al.) by using a Decoder-only Transformer architecture based on [Attention Is All You Need](https://arxiv.org/abs/1706.03762) (Vaswani, et al.) and [Improving Language Understanding by Generative Pre-Training](https://www.mikecaptain.com/resources/pdf/GPT-1.pdf) (Radford, et al.). Inside this architecture we will do comparisons e.g. of Tokenizers (BPE & RoPE) or different Attention mechanisms like Scaled dot-product Attention and Linear Attention. If time permits, we will compare the Transformer architecture with Mamba, a state-space model proposed in [Mamba: Linear-Time Sequence Modeling with Selective State Spaces](https://arxiv.org/abs/2312.00752) (Gu, et al.).
+The project implements multiple model architectures from scratch using PyTorch, trained on the [TinyStories dataset](https://huggingface.co/datasets/roneneldan/TinyStories)—a clean, restricted-domain collection of children's stories ideal for training efficient models. Our models are designed for next-token prediction and story continuation tasks.
 
 ## Features
 
-- **No features yet**: the features will be added alongside the course of the project
+- **Multiple model architectures** supporting N-gram and Transformer models
+- **Comprehensive evaluation metrics** including BLEU, ROUGE, perplexity, distinct-n, text quality, and noun carryover analysis
+- **Flexible tokenization** with BPE and character-level tokenizers
+- **W&B integration** for experiment tracking and visualization
+- **Production-ready evaluation pipeline** with model comparison and dataset analysis tools
+- **Clean, modular codebase** with abstract base classes for extensibility
+
+## Supported Models
+
+- **N-gram Model**: Lightweight baseline model for quick experiments
+- **Transformer Model**: Custom decoder-only transformer architecture with configurable attention mechanisms
 
 ## Directory Structure
 
-```bash
+```
 pocket-narrator/
-├── README.md
-├── requirements.txt
-├── configs/                             # Configuration files for experiments
-│   └── …
-├── data/                                # Raw and processed datasets
-│   └── …
-├── models/                              # Saved model checkpoints
-│   └── …
-├── notebooks/                           # Exploratory data analysis and experimentation
-│   └── …
-├── pocket_narrator/                     # Source code for the PocketNarrator package
+├── README.md                            # Project documentation
+├── requirements.txt                     # Python dependencies
+├── pyproject.toml                       # Project configuration
+├── pytest.ini                           # Pytest configuration
+│
+├── configs/                             # Configuration files for models and training
+│   ├── base_config.yaml
+│   ├── evaluation/                      # Evaluation configs
+│   ├── models/                          # Model-specific configs
+│   ├── tokenizers/                      # Tokenizer configs
+│   └── training/                        # Training configs
+│
+├── data/                                # Datasets (raw and processed)
+│   ├── raw/                             # Original dataset files
+│   └── processed/                       # Processed datasets
+│
+├── models/                              # Trained model checkpoints
+│   ├── ngram/
+│   ├── transformer/
+│   └── cool_models/
+│
+├── notebooks/                           # Jupyter notebooks for exploration
+│
+├── pocket_narrator/                     # Main package source code
 │   ├── __init__.py
-│   ├── models                           # The core model architectures
-│   │   ├── __init__.py                  # factory methods for getting & loading a model instance
-│   │   ├── components                   # components needed for different architectures
-│   │   │   ├── __init__.py      
-│   │   │   ├── base_pos_encoding.py     # abstract base class for positional encodings
-│   │   │   └── positional_encoding.py   # sinusoidal & rotary positional encoding
-│   │   ├── transformers                 # decoder-only transformer architecture
-│   │   │   ├── __init__.py      
-│   │   │   ├── attention.py             # multihead self-attention
-│   │   │   ├── base_attention.py        # abstract base class for attention mechanisms
-│   │   │   ├── model.py                 # creating transformer models
-│   │   │   └── transformer_block.py     # creating transformer blocks
-│   │   ├── base_model.py                # abstract base class for language models
-│   │   └── ngram_model.py               # n-gram model
-│   ├── tokenizers                       # multiple different tokenizers
-│   │   ├── __init__.py                  # factory method for getting a tokenizer instance
-│   │   ├── base_tokenizer.py            # abstract base class for tokenizers
-│   │   ├── bpe_tokenizer.py             # bpe tokenizer
-│   │   └── character_tokenizer.py       # character-level tokenizer
-│   ├── trainers                         # multiple different trainers for the different models
-│   │   ├── __init__.py                  # factory method for getting a trainer instance
-│   │   ├── base_trainer.py              # abstract base class for trainers
-│   │   ├── ngram_trainer.py             # trainer for n-gram models
-│   │   └── transformer_trainer.py       # trainer for transformer models
-│   ├── data_loader.py                   # Loads and preprocesses data for the model
-│   ├── evaluate.py                      # Functions for evaluating model performance
-├── scripts/                             # Standalone scripts for execution
-│   ├── train.py                         # Script to train the model
-│   └── generate.py                      # Script to generate text with a trained model
+│   ├── models/                          # Model architectures
+│   │   ├── base_model.py                # Abstract base class
+│   │   ├── ngram_model.py               # N-gram implementation
+│   │   ├── components/                  # Reusable components
+│   │   │   ├── positional_encoding.py
+│   │   │   └── base_pos_encoding.py
+│   │   └── transformers/                # Transformer architecture
+│   │       ├── model.py
+│   │       ├── transformer_block.py
+│   │       ├── attention.py
+│   │       └── base_attention.py
+│   │
+│   ├── tokenizers/                      # Tokenization implementations
+│   │   ├── base_tokenizer.py
+│   │   ├── bpe_tokenizer.py
+│   │   └── character_tokenizer.py
+│   │
+│   ├── trainers/                        # Model trainers
+│   │   ├── base_trainer.py
+│   │   ├── ngram_trainer.py
+│   │   └── transformer_trainer.py
+│   │
+│   ├── data_loader.py                   # Data loading utilities
+│   ├── evaluate.py                      # Evaluation metrics
+│   ├── text_quality.py                  # Text quality evaluation
+│   ├── noun_carryover.py                # Noun carryover metrics
+│   └── gemini_api.py                    # LLM-based evaluation
+│
+├── scripts/                             # Standalone execution scripts
+│   ├── train.py                         # Main training script
+│   ├── generate.py                      # Text generation
+│   ├── evaluate_model.py                # Single model evaluation
+│   ├── evaluate_dataset_comprehensive.py # Dataset evaluation
+│   ├── preprocess.py                    # Data preprocessing
+│   ├── fetch_tinystories.py             # Dataset download
+│   └── …
+│
 ├── tests/                               # Unit and integration tests
-│   └── test_*.py                        # Individual test files
-├── tokenizers/                          # saved trained tokenizers
-│   └── …
-├── wandb/                               # logging
-│   └── …
+│
+├── tokenizers/                          # Saved tokenizer artifacts
+│
+├── results/                             # Evaluation results (JSON)
+│
+└── wandb/                               # W&B experiment tracking
 ```
 
 ## Requirements
 
-- none yet
+- Python 3.8+
+- PyTorch 2.0+
+- NumPy, Pandas
+- Hugging Face Transformers & Datasets
+- wandb (for experiment tracking)
+- Optional: spacy, sentence-transformers, google-genai (for advanced evaluation)
 
 ## Installation
 
@@ -98,8 +138,8 @@ cd pocket-narrator
 ### 2. Set Up Environment
 
 ```bash
-# Create conda environment
-conda create -n pocket-narrator
+# Create conda environment with PyTorch
+conda create -n pocket-narrator python=3.10 pytorch pytorch-cuda=12.1 -c pytorch -c nvidia
 
 # Activate the conda environment
 conda activate pocket-narrator
@@ -115,19 +155,75 @@ pip install -r requirements.txt
 
 ### Training
 
+Train a model using the training script:
+
 ```bash
+# Train with default config
 python scripts/train.py
+
+# Train with specific config
+python scripts/train.py --config_path configs/training/train_tinystories_1M.yaml
+
+# Key arguments:
+#   --config_path: Path to training config YAML
+#   --model_type: ngram or transformer
+#   --dataset_path: Path to dataset
+#   --output_dir: Directory to save models
+#   --epochs: Number of training epochs
+#   --batch_size: Batch size for training
+```
+
+### Evaluation
+
+Evaluate a trained model on a dataset:
+
+```bash
+# Evaluate single model with comprehensive metrics
+python scripts/evaluate_model.py \
+    --model_path models/transformer/transformer_model.pth \
+    --model_type transformer \
+    --dataset_path data/test_dataset.txt
+
+# Evaluate dataset without a model (text quality, distinct-n, etc.)
+python scripts/evaluate_dataset_comprehensive.py \
+    --dataset_path data/validation.txt \
+    --dataset_name "TinyStories Validation"
 ```
 
 ### Generation
 
-```bash
-# to run with the default prompt
-python scripts/generate.py
+Generate text continuations with a trained model:
 
-# to provide your own prompt
-python scripts/generate.py --prompt "A girl went to the"
+```bash
+# Generate with default prompt
+python scripts/generate.py \
+    --model_path models/transformer/transformer_model.pth \
+    --model_type transformer
+
+# Generate with custom prompt
+python scripts/generate.py \
+    --model_path models/transformer/transformer_model.pth \
+    --model_type transformer \
+    --prompt "A girl went to the" \
+    --max_length 100 \
+    --temperature 0.7
 ```
+
+## Project Structure
+
+### Core Components
+
+- **Models**: Extensible model implementations (N-gram, Transformer)
+- **Tokenizers**: Multiple tokenization strategies (BPE, character-level)
+- **Trainers**: Trainer classes for different architectures
+- **Evaluation**: Comprehensive metrics (BLEU, ROUGE, perplexity, text quality, LLM judgments)
+
+### Key Features
+
+- **Configuration-driven**: All experiments defined in YAML configs
+- **Experiment tracking**: W&B integration for logging and visualization
+- **Modular design**: Easy to add new models, tokenizers, or evaluation metrics
+- **Well-tested**: Unit and integration tests for core functionality
 
 ## Team
 
