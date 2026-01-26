@@ -381,7 +381,7 @@ def main():
     except Exception:
         pass
 
-    # model architecture (Transformer / Mamba / Ngram)
+    # model architecture (Transformer / Ngram)
     if hasattr(model, "config") and isinstance(model.config, dict):
         for k, v in model.config.items():
             extra_cfg[f"model/{k}"] = v

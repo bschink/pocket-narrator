@@ -2,7 +2,7 @@
 Model Evaluation Script
 
 Evaluates a trained language model by:
-1. Loading the model (ngram, transformer, or mamba)
+1. Loading the model (ngram or transformer)
 2. Loading a dataset (test, training, or validation)
 3. Splitting stories at the midpoint (prompt | ground_truth)
 4. Generating predictions from prompts using the model
@@ -137,7 +137,7 @@ def generate_from_prompt(
         model: Loaded language model
         tokenizer: Loaded tokenizer
         prompt: Text prompt to generate from
-        model_type: Type of model ('ngram', 'transformer', 'mamba')
+        model_type: Type of model ('ngram', 'transformer')
         generation_kwargs: Additional generation parameters
         
     Returns:
@@ -227,7 +227,7 @@ def calculate_perplexity(
             avg_loss = loss / max(len(tokens), 1)
             return math.exp(avg_loss)
         
-        elif model_type in ["transformer", "mamba"]:
+        elif model_type == "transformer":
             # For neural models: forward pass + cross-entropy loss
             import torch
             import torch.nn.functional as F
@@ -813,7 +813,7 @@ def main():
     parser.add_argument(
         "--model_type",
         type=str,
-        choices=["ngram", "transformer", "mamba"],
+        choices=["ngram", "transformer"],
         default=None,
         help="Type of model"
     )

@@ -19,7 +19,6 @@ def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageMod
       - "ngram"
       - "transformer"
       - "hf_tinystories"
-      - "mamba" (not fully functional yet)
     """
     print(f"INFO: Getting model of type '{model_type}'...")
 
@@ -41,16 +40,6 @@ def get_model(model_type: str, vocab_size: int, **kwargs) -> AbstractLanguageMod
             model_name=hf_model_name,
             device=kwargs.get("device", None)
         )
-    elif model_type == "mamba":
-        from ...mamba.mamba_model import MambaLanguageModel
-        return MambaLanguageModel(
-            vocab_size=vocab_size,
-            eos_token_id=kwargs.get("eos_token_id"),
-            d_model=kwargs.get("d_model", 256),
-            n_layers=kwargs.get("n_layers", 4),
-            device=kwargs.get("device", None),
-        )
-
     else:
         raise ValueError(f"Unknown model type: '{model_type}'")
     
