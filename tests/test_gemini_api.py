@@ -96,10 +96,10 @@ class TestParseLLMJudgeResponse:
         assert scores.grammar == 0.0
         assert scores.creativity == 0.0
         assert scores.consistency == 0.0
-        assert scores.age_group == "unknown"
+        assert scores.age_group == "error"
     
     def test_parse_partial_response(self):
-        """Test parsing a response with missing fields."""
+        """Test parsing a response with missing fields marks as error."""
         response = """
         <grammar>2</grammar>
         <age_group>C</age_group>
@@ -110,7 +110,7 @@ class TestParseLLMJudgeResponse:
         assert scores.grammar == 2.0
         assert scores.creativity == 0.0  # Missing, defaults to 0
         assert scores.consistency == 0.0  # Missing, defaults to 0
-        assert scores.age_group == "C"
+        assert scores.age_group == "error"  # Marked as error due to missing fields
     
     def test_parse_lowercase_age_group(self):
         """Test parsing lowercase age group letter."""
@@ -125,8 +125,8 @@ class TestParseLLMJudgeResponse:
         
         assert scores.age_group == "A"  # Normalized to uppercase
     
-    def test_parse_scores_capped_at_3(self):
-        """Test that scores above 3 are capped."""
+    def test_parse_scores_capped_at_5(self):
+        """Test that scores above 5 are capped."""
         response = """
         <grammar>5</grammar>
         <creativity>10</creativity>
@@ -136,9 +136,9 @@ class TestParseLLMJudgeResponse:
         
         scores = parse_llm_judge_response(response)
         
-        assert scores.grammar == 3.0
-        assert scores.creativity == 3.0
-        assert scores.consistency == 3.0
+        assert scores.grammar == 5.0
+        assert scores.creativity == 5.0
+        assert scores.consistency == 5.0
         assert scores.age_group == "E"
 
 
@@ -154,7 +154,7 @@ class TestGeminiClient:
         client = GeminiClient(api_key="test-api-key")
         
         assert client.api_key == "test-api-key"
-        assert client.model == "gemini-2.5-flash-lite-preview-09-2025"
+        assert client.model == "gemini-2.5-flash"
     
     def test_init_without_api_key_raises_error(self):
         """Test that missing API key raises an error."""
