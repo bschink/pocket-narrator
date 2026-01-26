@@ -13,7 +13,7 @@
 #
 # ============================================================================
 
-run_name: "transformer_28M_wide"
+run_name: "ngram_char"
 
 # ============================================================================
 # DATA CONFIGURATION
@@ -30,17 +30,17 @@ data:
 
   # Batch size for training (used in compute_batch_loss for transformers)
   # N-grams train on the full corpus, but this is still used for validation batching
-  batch_size: 128
+  batch_size: 256
 
 # ============================================================================
 # TOKENIZER CONFIGURATION
 # ============================================================================
 tokenizer:
   # Type of tokenizer: "bpe" or "character"
-  type: "bpe"
+  type: "character"
 
   # Path where tokenizer will be saved/loaded
-  path: "tokenizers/bpe_tokenizer_5k_eigth_50_rounds"
+  path: "tokenizers/character_tokenizer_1k_eigth"
 
   # Tokenizer-specific parameters
   # These vary based on tokenizer type (see below)
@@ -48,7 +48,7 @@ tokenizer:
   # ========== BPE TOKENIZER PARAMETERS ==========
   tokenizer_config:
     # Vocabulary size (must be >= 256 for BPE, includes special tokens)
-    vocab_size: 5000
+    vocab_size: 1000
 
     # Number of merge operations to perform per round
     # Recommended: 200-500 for large datasets
@@ -67,36 +67,36 @@ tokenizer:
   special_tokens:
     - "<|endoftext|>"
     - "<|pad|>"
-  #   - "<unk>"
-  #   - "<bos>"
-  #   - "<eos>"
+  #   - "<|unk|>"
+  #   - "<|bos|>"
+  #   - "<|eos|>"
 
 # ============================================================================
 # MODEL CONFIGURATION
 # ============================================================================
 model:
   # Model type: "transformer" or "ngram"
-  type: "transformer"
+  type: "ngram"
 
   # ========== TRANSFORMER MODEL PARAMETERS ==========
   # (Only used when type: "transformer")
 
   # Model dimension (embedding and hidden size)
   # Recommended: 64, 128, 256, 512
-  d_model: 512
+  d_model: 128
 
   # Number of transformer blocks (layers)
   # Recommended: 2, 4, 6, 8
-  n_layers: 8
+  n_layers: 4
 
   # Number of attention heads
   # Constraint: d_model must be divisible by n_head
   # Recommended: 2, 4, 8
-  n_head: 8
+  n_head: 4
 
   # Maximum sequence length
   # Tokens beyond this will be truncated during training
-  max_len: 256
+  max_len: 512
 
   # Dropout rate (0.0 to 1.0)
   # Typical values: 0.1, 0.2, 0.3
@@ -105,7 +105,7 @@ model:
   # Positional encoding type: "sinusoidal" or "rope"
   # sinusoidal: standard transformer positional encoding
   # rope: Rotary Position Embedding (better for longer sequences)
-  pos_encoding_type: "rope"
+  pos_encoding_type: "sinusoidal"
 
   # Attention type: "multi_head" (currently only option)
   attention_type: "multi_head"
@@ -113,7 +113,7 @@ model:
   # Activation function type in feed-forward layers: "gelu" or "swiglu"
   # gelu: Gaussian Error Linear Unit (standard)
   # swiglu: SiLU Gated Linear Unit (LLaMA-style, more efficient)
-  activation_type: "swiglu"
+  activation_type: "gelu"
 
   # ========== N-GRAM MODEL PARAMETERS ==========
   # (Only used when type: "ngram")
@@ -128,18 +128,18 @@ model:
 # ============================================================================
 trainer:
   # Trainer type: "transformer" or "ngram"
-  type: "transformer"
+  type: "ngram"
 
   # ========== TRANSFORMER TRAINER PARAMETERS ==========
   # (Only used when type: "transformer")
 
   # Learning rate for Adam optimizer
   # Typical values: 1e-4, 3e-4, 5e-4, 1e-3
-  learning_rate: 5e-5
+  learning_rate: 3e-4
 
   # Number of epochs to train
   # One epoch = one pass through all training data
-  epochs: 40
+  epochs: 4
 
   # L2 regularization (weight decay)
   # Typical values: 0.0, 0.01, 0.1
@@ -153,15 +153,15 @@ trainer:
   # Number of steps for learning rate warmup
   # Learning rate linearly increases for this many steps, then decays
   # Typical values: 0 (no warmup), 100, 500, 1000
-  warmup_steps: 500
+  warmup_steps: 0
 
   # Whether to use Automatic Mixed Precision (AMP) for faster training on CUDA
   # Requires GPU, disabled on CPU
-  use_amp: true
+  use_amp: false
 
   # Whether to enable KV-cache during generation (inference only, not training)
   # Speeds up generation but uses more memory
-  kv_caching_enabled: true
+  kv_caching_enabled: false
 
   # ========== N-GRAM TRAINER PARAMETERS ==========
   # (Only used when type: "ngram")
@@ -213,12 +213,13 @@ generation:
 # ============================================================================
 saving:
   # Directory where trained models will be saved
-  model_dir: "models/transformer"
+  model_dir: "models/ngram"
 
   # Specific model filename (e.g., "my_model.model")
   # If null, a timestamped name will be auto-generated
   # Format: {model_type}_{YYYYMMDD_HHMMSS}.model
-  model_name: transformer_28M_wide.model
+  model_name: "ngram_char.model"
+
 # ============================================================================
 # NOTES ON PARAMETER SELECTION
 # ============================================================================

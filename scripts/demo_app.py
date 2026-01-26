@@ -10,7 +10,7 @@ import gradio as gr
 from pocket_narrator.models import load_model
 from pocket_narrator.tokenizers import get_tokenizer
 
-MODEL_PATH = "models/transformer_28M_higher_lr_full_dataset_too_many_epochs.model"
+MODEL_PATH = "models/transformer/transformer_28M_higher_lr_full_dataset_too_many_epochs.model"
 GENERATION_STRATEGY = "sample"
 TOKENIZER_TYPE = "bpe"
 TOKENIZER_PATH = "tokenizers/bpe_tokenizer_5k_full_20_rounds"

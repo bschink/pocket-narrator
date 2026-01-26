@@ -2,7 +2,7 @@
 # Model Evaluation Configuration
 # ============================================================================
 # Comprehensive evaluation of a trained language model on a dataset
-# 
+#
 # Usage:
 #   python scripts/evaluate_model.py \
 #     --config configs/evaluation/evaluate_model_first.yaml
@@ -19,8 +19,8 @@
 # ============================================================================
 model:
   # Path to trained model
-  path: "models/transformer_28M_AMP.model"
-  
+  path: "models/transformer/transformer_28M_AMP.model"
+
   # Type of model: ngram, transformer, or mamba
   type: "transformer"
 
@@ -29,11 +29,11 @@ model:
 # ============================================================================
 dataset:
   # Path to dataset file (one story per line)
-  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-valid.clean.txt"
-  
+  path: "data/processed/TinyStories/TinyStoriesV2-GPT4-valid.clean.eighth.txt"
+
   # Display name for W&B logging
-  name: "C_28M AMP transformer model eval"
-  
+  name: "C 28M AMP transformer model eval"
+
   # Maximum number of stories to evaluate (null = all)
   max_stories: 3035
 
@@ -43,7 +43,7 @@ dataset:
 tokenizer:
   # Type of tokenizer: character or bpe
   type: "bpe"
-  
+
   # Path to tokenizer (null = default path based on type)
   path: "tokenizers/bpe_tokenizer_5k_eigth_50_rounds"
 
@@ -60,19 +60,19 @@ device:
 generation:
   # Generation strategy: greedy or sample
   strategy: "sample"
-  
+
   # Maximum tokens to generate per prompt
   max_length: 5000
-  
+
   # Temperature for sampling (transformer only, 0-2.0)
   temperature: 0.9
-  
+
   # Top-k sampling (transformer only, 0 = disabled)
   top_k: null
-  
+
   # Top-p nucleus sampling (transformer only, 0-1.0)
   top_p: null
-  
+
   # Avoid repeating n-grams (ngram only)
   no_repeat_ngram_size: 3
 
@@ -84,12 +84,12 @@ metrics:
   # Requires: sentence-transformers
   text_quality:
     enabled: true
-  
+
   # Noun carryover evaluation (hard & soft coverage)
   # Requires: spacy + sentence-transformers
   noun_carryover:
     enabled: true
-  
+
   # LLM-as-a-judge evaluation (grammar, creativity, consistency)
   # Requires: Google Generative AI API key
   llm_judge:
@@ -97,8 +97,8 @@ metrics:
     # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
     api_key: null
     # Random sampling for LLM judge (expensive API calls)
-    sample_size: 500      # number of stories to sample (None = all)
-    random_seed: 42        # seed for reproducibility
+    sample_size: 500 # number of stories to sample (None = all)
+    random_seed: 42 # seed for reproducibility
 
 # ============================================================================
 # OUTPUT CONFIGURATION
@@ -106,10 +106,10 @@ metrics:
 output:
   # Save results to JSON file (null = no JSON export)
   json_path: "results/model_eval_C_transformer_28M_AMP.json"
-  
+
   # W&B logging enabled (requires wandb install + wandb login)
   wandb_enabled: true
-  
+
   # W&B project name
   wandb_project: "pocket-narrator-eval"
 

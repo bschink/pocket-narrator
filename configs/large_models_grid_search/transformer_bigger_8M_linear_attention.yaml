@@ -13,7 +13,7 @@
 #
 # ============================================================================
 
-run_name: "transformer_bigger_better_linear_attention"
+run_name: "transformer_8M_linear_attention"
 
 # ============================================================================
 # DATA CONFIGURATION

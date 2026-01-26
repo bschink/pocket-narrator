@@ -105,7 +105,7 @@ model:
   # Positional encoding type: "sinusoidal" or "rope"
   # sinusoidal: standard transformer positional encoding
   # rope: Rotary Position Embedding (better for longer sequences)
-  pos_encoding_type: "rope"
+  pos_encoding_type: "sinusoidal"
 
   # Attention type: "multi_head" (currently only option)
   attention_type: "linear"

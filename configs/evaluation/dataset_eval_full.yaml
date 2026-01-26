@@ -2,7 +2,7 @@
 # Dataset Evaluation Configuration
 # ============================================================================
 # Comprehensive evaluation of TinyStories dataset with all metrics enabled
-# 
+#
 # Usage:
 #   python scripts/evaluate_dataset_comprehensive.py \
 #     --dataset_path configs/dataset_eval_first.yaml
@@ -19,10 +19,10 @@
 dataset:
   # Path to dataset file (one story per line)
   path: "data/processed/TinyStories/TinyStoriesV2-GPT4-train.clean.txt"
-  
+
   # Display name for W&B logging
   name: "Full TinyStories Clean"
-  
+
   # Maximum number of stories to evaluate (None = all)
   max_stories: null
 
@@ -39,7 +39,7 @@ device:
 evaluation:
   # Batch size for story evaluation (higher = better GPU utilization, more memory)
   # Recommended: 16 for most GPUs, 8 for limited VRAM, 32+ for high-end GPUs
-  batch_size: 32
+  batch_size: 16384
 
 # ============================================================================
 # OPTIONAL METRICS CONFIGURATION
@@ -49,12 +49,12 @@ metrics:
   # Requires: optional dependencies
   text_quality:
     enabled: true
-  
+
   # Noun carryover evaluation (hard & soft coverage)
   # Requires: spacy + sentence-transformers
   noun_carryover:
     enabled: true
-  
+
   # LLM-as-a-judge evaluation (grammar, creativity, consistency)
   # Requires: Google Generative AI API key
   llm_judge:
@@ -62,8 +62,8 @@ metrics:
     # API key for Google Gemini (reads from GOOGLE_API_KEY env var if null)
     api_key: null
     # Random sampling for LLM judge (expensive API calls)
-    sample_size: 1000      # number of stories to sample (None = all)
-    random_seed: 42        # seed for reproducibility
+    sample_size: 500 # number of stories to sample (None = all)
+    random_seed: 42 # seed for reproducibility
 
 # ============================================================================
 # OUTPUT CONFIGURATION
@@ -71,10 +71,10 @@ metrics:
 output:
   # Save results to JSON file (null = no JSON export)
   json_path: "results/tinystories_clean_full_eval.json"
-  
+
   # W&B logging enabled (requires wandb install + wandb login)
   wandb_enabled: true
-  
+
   # W&B project name
   wandb_project: "pocket-narrator-eval"
 
