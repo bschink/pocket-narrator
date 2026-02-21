@@ -106,14 +106,11 @@ def test_run_evaluation_perfect_text_match_metrics():
         predicted_tokens, target_tokens, predicted_text, target_text, check_grammar=False
     )
     
-    # BLEU-4 might be 0 because sequence length (3) < 4, but ROUGE-1/2 should be 1.0
     assert summary["rouge_1"] == 1.0
     assert summary["rouge_2"] == 1.0
     assert summary["rouge_l"] == 1.0
     
-    # Distinct-1: "the", "cat", "sat" -> 3/3 = 1.0
     assert summary["distinct_1"] == 1.0
-    # Repetition rate: 0
     assert summary["repetition_rate"] == 0.0
 
 def test_run_evaluation_text_mismatch_metrics():
@@ -141,11 +138,7 @@ def test_diversity_metrics_repetitive_text():
         [[1]], [[1]], predicted_text, target_text, check_grammar=False
     )
     
-    # 4 tokens total, 1 unique ("test")
-    # Repetition Rate = (4 - 1) / 4 = 0.75
     assert summary["repetition_rate"] == 0.75
-    
-    # Distinct-1: 1 unique / 4 total = 0.25
     assert summary["distinct_1"] == 0.25
 
 # --- Grammar Checker Tests ---
@@ -255,7 +248,6 @@ class TestCalculateLLMJudgeScores:
         """Test that average scores are calculated correctly."""
         from pocket_narrator.gemini_api import LLMJudgeScores
         
-        # Mock the batch evaluation to return predefined scores
         mock_batch.return_value = [
             LLMJudgeScores(grammar=3.0, creativity=2.0, consistency=3.0, age_group="C", raw_response=""),
             LLMJudgeScores(grammar=2.0, creativity=3.0, consistency=2.0, age_group="C", raw_response=""),

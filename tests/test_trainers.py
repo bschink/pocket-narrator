@@ -116,7 +116,6 @@ def test_transformer_trainer_train_method_updates_weights(mock_wandb):
     trainer = TransformerTrainer(epochs=1, batch_size=2, use_amp=False, warmup_steps=0, pad_token_id=pad_token_id)
     
     # Act
-    # Note: The trainer handles the unpacking of (logits, present) internally now.
     trained_model = trainer.train(
         model=model, 
         tokenizer=tokenizer, 

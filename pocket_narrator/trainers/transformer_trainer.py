@@ -202,10 +202,8 @@ class TransformerTrainer(AbstractTrainer):
         """
         max_len = model.config["max_len"]
         
-        # Create causal mask to prevent attending to future tokens
         causal_mask = torch.triu(torch.ones(max_len, max_len) * float('-inf'), diagonal=1).to(self.device)
 
-        # tokenize and prepare for LM
         batch_tokens = tokenizer.encode_batch(batch_text)
         input_batch, target_batch = self._prepare_batch_for_lm(batch_tokens, max_len)
 
@@ -213,7 +211,6 @@ class TransformerTrainer(AbstractTrainer):
             # degenerate case: all sequences too short
             return torch.tensor(0.0, device=self.device, requires_grad=True), 0.0, 0
 
-        # choose AMP or no AMP
         if self.use_amp and self.device == "cuda":
             amp_ctx = torch.autocast(device_type="cuda", dtype=torch.float16)
         else:
@@ -229,14 +226,11 @@ class TransformerTrainer(AbstractTrainer):
             else:
                 logits = out
 
-            # Use the same CrossEntropyLoss as validation
             loss_sum = loss_fn(logits.view(-1, logits.size(-1)), target_batch.view(-1))
             
-            # Get number of valid (non-padded) tokens
             num_valid_tokens = (target_batch.view(-1) != self.pad_token_id).sum().item()
             
             if num_valid_tokens > 0:
-                # Normalize for backprop
                 normalized_loss = loss_sum / num_valid_tokens
             else:
                 normalized_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
@@ -252,7 +246,6 @@ class TransformerTrainer(AbstractTrainer):
         optional validation data can be provided to report perplexity during training.
         If batch_size is provided, it overrides the trainer's default batch_size.
         """
-        # Use provided batch_size if specified, otherwise use instance batch_size
         if batch_size is not None:
             self.batch_size = batch_size
             
@@ -264,13 +257,11 @@ class TransformerTrainer(AbstractTrainer):
         model.train()
         optimizer = torch.optim.AdamW(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
 
-        # calculate approx total steps for scheduler
         approx_steps_per_epoch = len(train_data) // self.batch_size
         steps_per_epoch = max(1, approx_steps_per_epoch)
         total_steps = steps_per_epoch * self.epochs
         scheduler = self._get_cosine_schedule_with_warmup(optimizer, total_steps)
         
-        # Create shared loss function for both train and validation
         loss_fn = nn.CrossEntropyLoss(ignore_index=self.pad_token_id, reduction='sum')
 
         step_counter = 0
@@ -290,13 +281,11 @@ class TransformerTrainer(AbstractTrainer):
             for step_idx, batch_text in zip(pbar, batch_iterator):
                 optimizer.zero_grad()
 
-                # Get loss components from batch
                 normalized_loss, raw_loss_sum, num_valid_tokens = self.compute_batch_loss(model, tokenizer, batch_text, loss_fn)
                 
                 grad_norm = None
 
                 if self.scaler is not None:
-                    # Mixed Precision (AMP) Step
                     self.scaler.scale(normalized_loss).backward()
                     
                     if self.grad_clip:
@@ -307,7 +296,6 @@ class TransformerTrainer(AbstractTrainer):
                     self.scaler.step(optimizer)
                     self.scaler.update()
                 else:
-                    # Standard Precision Step
                     normalized_loss.backward()
 
                     if self.grad_clip:
@@ -317,28 +305,23 @@ class TransformerTrainer(AbstractTrainer):
 
                 scheduler.step()
 
-                # Accumulate raw loss sum and token count (same as validation does)
                 total_loss_sum += raw_loss_sum
                 total_tokens += num_valid_tokens
 
-                # --- wandb dynamic log with LR and gradient norm ---
                 log_dict = {
                     "train/loss": normalized_loss.item(),
                     "train/perplexity": math.exp(normalized_loss.item()),
                     "train/lr": scheduler.get_last_lr()[0],
                 }
                 
-                # Log gradient norm if available
                 if grad_norm is not None:
                     log_dict["train/grad_norm"] = grad_norm.item() if torch.is_tensor(grad_norm) else grad_norm
                 
                 wandb.log(log_dict)
                 pbar.set_postfix({"loss": normalized_loss.item()})
 
-            # Compute epoch average loss (normalize by total tokens, matching validation)
             avg_loss = total_loss_sum / total_tokens if total_tokens > 0 else 0.0
 
-            # Compute validation loss if val_data is provided
             if val_data is not None:
                 val_loss = self.calculate_validation_loss(model, tokenizer, val_data, loss_fn)
                 if val_loss < best_val_loss:
@@ -350,7 +333,6 @@ class TransformerTrainer(AbstractTrainer):
                 val_loss = None
                 val_perplexity = None
 
-            # Extra epoch-level logs
             epoch_log = {
                 "epoch/loss_avg": avg_loss,
                 "epoch/perplexity_avg": math.exp(avg_loss),
@@ -367,7 +349,6 @@ class TransformerTrainer(AbstractTrainer):
         
         print("\nTransformer training complete.")
         
-        # Log final stats to wandb.summary for easy comparison
         wandb.summary["training/best_val_loss"] = best_val_loss if best_val_loss != float('inf') else None
         wandb.summary["training/final_val_perplexity"] = math.exp(best_val_loss) if best_val_loss != float('inf') else None
         wandb.summary["training/total_duration_seconds"] = training_duration

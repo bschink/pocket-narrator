@@ -97,7 +97,7 @@ def test_fallback_entities_basic():
     assert "lily" in entities
     assert "park" in entities
     assert "tom" in entities
-    # Stopwords should be filtered
+
     assert "the" not in entities
     assert "to" not in entities
     assert "with" not in entities
@@ -109,10 +109,9 @@ def test_fallback_entities_min_length():
     sentence = "A cat sat on a mat."
     entities = _fallback_entities(sentence, cfg)
     
-    # Only entities >= 4 chars
-    assert "cat" not in entities  # 3 chars
-    assert "sat" not in entities  # 3 chars
-    assert "mat" not in entities  # 3 chars
+    assert "cat" not in entities
+    assert "sat" not in entities
+    assert "mat" not in entities
 
 
 def test_fallback_entities_contractions():
@@ -121,7 +120,6 @@ def test_fallback_entities_contractions():
     sentence = "She's happy and he'll come."
     entities = _fallback_entities(sentence, cfg)
     
-    # Contractions should be extracted as single tokens
     assert "happy" in entities
     assert "come" in entities
 
@@ -275,7 +273,6 @@ def test_compute_cohesion_with_mock_embedder():
     cfg = TextQualityConfig(use_sentence_transformers=True)
     sentences = ["Lily went to the park.", "Lily played on the swings."]
     
-    # Create mock embedder
     mock_embedder = MagicMock()
     import numpy as np
     # High similarity vectors (nearly identical)
@@ -403,7 +400,6 @@ def test_evaluate_text_quality_low_coherence():
     
     result = evaluate_text_quality(story, cfg=cfg)
     
-    # Different entities in each sentence
     assert result["coherence"] < 0.3
 
 
@@ -442,7 +438,6 @@ def test_embedder_lazy_loading():
     """Test that embedder only loads model on first encode call."""
     embedder = _Embedder("test-model")
     
-    # Model should not be loaded yet
     assert embedder._model is None
     
     # We can't easily test the actual loading without sentence-transformers installed,
@@ -494,7 +489,6 @@ def test_evaluate_text_quality_repeated_content():
     
     result = evaluate_text_quality(story, cfg=cfg)
     
-    # Should have perfect coherence (identical entities)
     assert result["coherence"] == 1.0
 
 

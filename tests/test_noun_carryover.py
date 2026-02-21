@@ -77,7 +77,6 @@ def test_extract_nouns_stopword_removal():
     """Test that stopwords are removed."""
     text = "The cat is in the house."
     nouns = extract_nouns(text)
-    # Should not contain stopwords like "the", "is", "in"
     for noun in nouns:
         assert noun not in {"the", "is", "in", "a", "an"}
 
@@ -222,10 +221,8 @@ def mock_embedder():
     embedder = MagicMock()
     embedder.available.return_value = True
     
-    # Mock encode to return simple embeddings
     def mock_encode(texts):
         import numpy as np
-        # Return unit vectors with controlled similarity
         vectors = []
         
         # Create a consistent mapping: same word -> same vector
@@ -271,7 +268,6 @@ def test_soft_coverage_no_match(mock_embedder):
     prompt_nouns = ["cat"]
     story_nouns = ["tree"]  # Changed to use a word that will be orthogonal
     coverage = soft_coverage(prompt_nouns, story_nouns, mock_embedder)
-    # With our mock, different words have similarity 0
     assert coverage == 0.0
 
 
@@ -304,7 +300,6 @@ def test_soft_coverage_at_threshold(mock_embedder):
     prompt_nouns = ["cat", "dog"]
     story_nouns = ["cat", "dog"]
     coverage = soft_coverage_at(prompt_nouns, story_nouns, mock_embedder, threshold=0.9)
-    # Perfect matches should be above threshold
     assert coverage == 1.0
 
 
@@ -313,7 +308,6 @@ def test_soft_coverage_at_high_threshold(mock_embedder):
     prompt_nouns = ["cat", "dog"]
     story_nouns = ["bird", "tree"]  # Changed to use words that will be orthogonal
     coverage = soft_coverage_at(prompt_nouns, story_nouns, mock_embedder, threshold=0.9)
-    # No matches above threshold (bird and tree are different vectors)
     assert coverage == 0.0
 
 
@@ -340,7 +334,6 @@ def test_soft_coverage_at_unavailable():
 def test_soft_embedder_availability_check():
     """Test that embedder correctly checks for sentence-transformers."""
     embedder = SoftEmbedder()
-    # Should return True or False depending on whether package is installed
     available = embedder.available()
     assert isinstance(available, bool)
 
@@ -372,20 +365,17 @@ def test_noun_carryover_metrics_basic():
     
     metrics = noun_carryover_metrics(prompt, story)
     
-    # Check that all expected keys are present
     assert "hard_coverage" in metrics
     assert "hard_jaccard" in metrics
     assert "hard_precision" in metrics
     assert "soft_coverage" in metrics
     assert "soft_coverage@0.70" in metrics
     
-    # Check that hard metrics are computed (should be non-zero)
     assert metrics["hard_coverage"] >= 0.0
     assert metrics["hard_jaccard"] >= 0.0
     assert metrics["hard_precision"] >= 0.0
     
     # Soft metrics might be None if dependencies missing
-    # If available, should be between 0 and 1
     if metrics["soft_coverage"] is not None:
         assert 0.0 <= metrics["soft_coverage"] <= 1.0
     if metrics["soft_coverage@0.70"] is not None:
@@ -425,10 +415,7 @@ def test_noun_carryover_metrics_realistic_example():
     
     metrics = noun_carryover_metrics(prompt, story)
     
-    # Should have good coverage since Lucy and ball are mentioned
     assert metrics["hard_coverage"] > 0.0
-    
-    # Hard jaccard should be reasonable
     assert metrics["hard_jaccard"] > 0.0
 
 
@@ -439,7 +426,6 @@ def test_noun_carryover_metrics_no_overlap_example():
     
     metrics = noun_carryover_metrics(prompt, story)
     
-    # Should have low coverage since prompt nouns not used
     assert metrics["hard_coverage"] == 0.0
 
 
@@ -451,7 +437,6 @@ def test_extract_nouns_unicode():
     """Test noun extraction with unicode characters."""
     text = "The café had a piñata."
     nouns = extract_nouns(text)
-    # Should handle unicode gracefully
     assert isinstance(nouns, list)
 
 
@@ -459,7 +444,6 @@ def test_extract_nouns_numbers():
     """Test that numbers are filtered out."""
     text = "The cat has 123 toys."
     nouns = extract_nouns(text)
-    # Should not contain "123"
     assert "123" not in nouns
 
 
@@ -467,8 +451,6 @@ def test_hard_metrics_case_sensitivity():
     """Test that hard metrics are case-insensitive."""
     prompt_nouns = ["Cat", "Dog"]
     story_nouns = ["cat", "dog"]
-    # Should work if nouns are pre-normalized
-    # In practice, extract_nouns normalizes to lowercase
 
 
 def test_soft_config_defaults():
@@ -500,5 +482,4 @@ def test_noun_carryover_metrics_special_characters():
     
     metrics = noun_carryover_metrics(prompt, story)
     
-    # Should handle special characters gracefully
     assert isinstance(metrics["hard_coverage"], float)

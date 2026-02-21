@@ -88,11 +88,6 @@ def test_predict_respects_max_length(transformer_model):
     assert len(prediction[0]) == max_gen_length
 
 def test_kv_caching_consistency(transformer_model):
-    """
-    The 'Efficient Method' Proof:
-    Verify that generating with Cache=True produces the SAME output as Cache=False.
-    If this fails, the caching implementation is mathematically incorrect.
-    """
     transformer_model.eval()
     prompt = [[10, 20, 30]]
     

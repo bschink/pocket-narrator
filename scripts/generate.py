@@ -137,8 +137,6 @@ def main():
     
     # --- inference pipeline ---
     prompt_tokens_batch = [tokenizer.encode(prompt_text)]
-    
-    # Build predict kwargs based on model type
     predict_kwargs = {
         "strategy": args.generation_strategy,
         "max_length": args.max_length,
