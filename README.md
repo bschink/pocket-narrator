@@ -1,8 +1,6 @@
 # PocketNarrator: Efficient Story Generation with Small Language Models
 
-**Status:** Active Development 🚀
-
-PocketNarrator is a research project for the "Efficient Methods in Machine Learning" course (Master Project, WS25/26) at the University of Hamburg. It focuses on building and evaluating small language models for narrative generation using the [TinyStories dataset](https://huggingface.co/datasets/roneneldan/TinyStories).
+PocketNarrator was a research project for the "Efficient Methods in Machine Learning" course (Master Project, WS25/26) at the University of Hamburg. It focuses on building and evaluating small language models for narrative generation using the [TinyStories dataset](https://huggingface.co/datasets/roneneldan/TinyStories).
 
 ## Table of Contents
 
@@ -24,14 +22,14 @@ PocketNarrator is a research project for the "Efficient Methods in Machine Learn
 
 ## Overview
 
-PocketNarrator is a systematic investigation into the architecture and components of small language models for efficient narrative generation. Our goal is to understand trade-offs between different architectural choices in terms of performance, computational efficiency, and output quality.
+PocketNarrator is a systematic investigation into the architecture and components of small language models for efficient narrative generation. Our goal was to understand trade-offs between different architectural choices in terms of performance, computational efficiency, and output quality.
 
 The project implements multiple model architectures from scratch using PyTorch, trained on the [TinyStories dataset](https://huggingface.co/datasets/roneneldan/TinyStories)—a clean, restricted-domain collection of children's stories ideal for training efficient models. Our models are designed for next-token prediction and story continuation tasks.
 
 ## Features
 
 - **Multiple model architectures** supporting N-gram and Transformer models
-- **Comprehensive evaluation metrics** including BLEU, ROUGE, perplexity, distinct-n, text quality, and noun carryover analysis
+- **Comprehensive evaluation metrics** including BLEU, ROUGE, perplexity, distinct-n, LLM-as-a-judge, text quality, and noun carryover analysis
 - **Flexible tokenization** with BPE and character-level tokenizers
 - **W&B integration** for experiment tracking and visualization
 - **Production-ready evaluation pipeline** with model comparison and dataset analysis tools
@@ -40,11 +38,15 @@ The project implements multiple model architectures from scratch using PyTorch, 
 ## Supported Models
 
 - **N-gram Model**: Lightweight baseline model for quick experiments
-- **Transformer Model**: Custom decoder-only transformer architecture with configurable attention mechanisms
+- **Transformer Model**: Custom decoder-only transformer architecture with configuration options
+  - Positional encoding: Sinusoidal & RoPE (Rotary Positional Encoding)
+  - Activation function: GELU & SwiGLU
+  - Attention mechanism: Softmax & Linear (following [Katharopoulos et al.](https://proceedings.mlr.press/v119/katharopoulos20a.html?ref=mackenziemorehead.com))
+  - Optimization & efficiency techniques: Automatic Mixed Precision (AMP), LR scheduling, Gradient Clipping, Weight Decay, Dropout, KV-Caching
 
 ## Directory Structure
 
-```
+```bash
 pocket-narrator/
 ├── README.md                            # Project documentation
 ├── requirements.txt                     # Python dependencies
@@ -227,4 +229,4 @@ python scripts/generate.py \
 
 ## Team
 
-Asiya Yumna, Kosar Hazrati & Benedikt Schink
+Benedikt Schink & Asiya Yumna
