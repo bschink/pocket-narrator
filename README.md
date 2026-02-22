@@ -19,6 +19,7 @@ PocketNarrator was a research project for the "Efficient Methods in Machine Lear
   - [Evaluation](#evaluation)
   - [Generation](#generation)
   - [Demo App](#demo-app)
+- [Resources](#resources)
 - [Team](#team)
 
 ## Overview
@@ -277,6 +278,14 @@ MAX_NEW_TOKENS = 5000                                 # Maximum number of tokens
 ```
 
 Once running, open the local URL printed in the terminal to access the app. Enter a prompt, adjust the temperature slider, and click generate to produce a story continuation.
+
+## Resources
+
+| Resource | Link |
+| --- | --- |
+| W&B Training Runs | [once-upon-a-prompt/pocket-narrator](https://wandb.ai/once-upon-a-prompt/pocket-narrator) |
+| W&B Evaluation Runs | [once-upon-a-prompt/pocket-narrator-eval](https://wandb.ai/once-upon-a-prompt/pocket-narrator-eval) |
+| Trained Models & Tokenizers | [Google Drive](https://drive.google.com/drive/folders/1-RERz1Ftb2LBUQdj_BLLmp6NkYCrtKsK?usp=sharing) |
 
 ## Team
 
