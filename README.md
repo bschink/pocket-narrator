@@ -164,7 +164,7 @@ Train a model using the training script:
 python scripts/train.py
 
 # Train with specific config
-python scripts/train.py --config_path configs/training/train_tinystories_1M.yaml
+python scripts/train.py --config_path configs/large_models_grid_search/transformer_28M_higher_lr_full_dataset.yaml
 
 # Key arguments:
 #   --config_path: Path to training config YAML
